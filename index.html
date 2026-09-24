@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🇺🇿 GTA Toshkent — Moshina O'yini</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #33502f;
+    font-family: 'Segoe UI', Tahoma, sans-serif; user-select: none; -webkit-user-select: none; }
+  canvas#game { display: block; }
+
+  .panel { background: rgba(8,10,14,.80); color: #fff; border: 1px solid rgba(255,255,255,.14);
+    border-radius: 14px; backdrop-filter: blur(6px); box-shadow: 0 10px 300px rgba(0,0,0,.45); }
+
+  #hud { position: fixed; top: 14px; left: 14px; padding: 12px 16px; min-width: 240px; font-size: 14px; line-height: 1.75; z-index: 5; }
+  #hud .money { color: #ffd83d; font-size: 24px; font-weight: 800; letter-spacing: .5px; }
+  #hud .car { color: #6fe3ff; font-weight: 700; }
+  #hud .muted { color: #9aa4b2; font-size: 12px; }
+
+  #speedo { position: fixed; top: 14px; right: 14px; padding: 12px 18px; text-align: right; z-index: 5; }
+  #speedo .val { font-size: 42px; font-weight: 900; color: #4dff9d; line-height: 1; text-shadow: 0 0 18px rgba(77,255,157,.5); }
+  #speedo .unit { font-size: 13px; color: #9aa4b2; letter-spacing: 3px; }
+  #speedo .mode { margin-top: 6px; font-size: 13px; color: #ffd83d; font-weight: 700; }
+
+  #help { position: fixed; left: 14px; bottom: 14px; padding: 10px 14px; font-size: 12.5px; color: #cfd6e0; z-index: 5; line-height: 1.9; }
+  #help b { color: #fff; background: rgba(255,255,255,.12); padding: 1px 6px; border-radius: 5px; }
+
+  #buttons { position: fixed; right: 14px; bottom: 14px; display: flex; gap: 10px; z-index: 6; }
+  .gbtn { cursor: pointer; border: 1px solid rgba(255,255,255,.2); background: linear-gradient(180deg,#1d2530,#11161e);
+    color: #fff; font-weight: 700; font-size: 14px; padding: 12px 18px; border-radius: 12px; transition: .15s; }
+  .gbtn:hover { transform: translateY(-2px); border-color: #ffd83d; color: #ffd83d; }
+  .gbtn.accent { background: linear-gradient(180deg,#ffd83d,#e0a800); color: #1a1a1a; border-color: #ffd83d; }
+  .gbtn.accent:hover { color: #000; filter: brightness(1.07); }
+
+  #toasts { position: fixed; top: 118px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column;
+    gap: 8px; align-items: center; z-index: 8; pointer-events: none; }
+  .toast { background: rgba(8,10,14,.93); border: 1px solid rgba(255,255,255,.16); color: #fff; font-weight: 700;
+    padding: 9px 18px; border-radius: 30px; font-size: 15px; animation: pop .25s ease; }
+  .toast.bad { border-color: #ff4d4d; color: #ff8a8a; }
+  .toast.good { border-color: #4dff9d; color: #4dff9d; }
+  @keyframes pop { from { transform: scale(.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  #shop { position: fixed; inset: 0; background: rgba(4,6,10,.9); z-index: 20; display: flex; flex-direction: column;
+    padding: 26px; overflow: auto; }
+  .hidden { display: none !important; }
+  #shop h1 { color: #ffd83d; margin: 0 0 4px; font-size: 30px; }
+  #shop .sub { color: #9aa4b2; margin-bottom: 6px; font-size: 14px; max-width: 760px; line-height: 1.6; }
+  #shop .wallet { color: #4dff9d; font-weight: 900; font-size: 24px; }
+  #shopHead { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 16px; margin-top: 18px; }
+  .card { background: linear-gradient(180deg,#151b24,#0d1117); border: 1px solid rgba(255,255,255,.1); border-radius: 16px;
+    padding: 14px; transition: .15s; }
+  .card:hover { border-color: #ffd83d; transform: translateY(-3px); }
+  .card canvas { width: 100%; height: 108px; background: radial-gradient(circle at 50% 40%, #2a3340, #171c24);
+    border-radius: 10px; display: block; }
+  .card .nm { color: #fff; font-weight: 800; font-size: 15.5px; margin-top: 10px; }
+  .card .ctry { color: #9aa4b2; font-size: 12.5px; margin: 3px 0 8px; }
+  .card .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .card .price { color: #ffd83d; font-weight: 900; font-size: 18px; }
+  .card .spec { color: #6fe3ff; font-size: 12px; margin-top: 7px; }
+  .buy { cursor: pointer; border: 0; border-radius: 9px; padding: 9px 13px; font-weight: 800; font-size: 13px;
+    background: linear-gradient(180deg,#ffd83d,#e0a800); color: #171717; }
+  .buy:disabled { background: #2a3038; color: #7b8695; cursor: not-allowed; }
+  .buy.owned { background: linear-gradient(180deg,#4dff9d,#1fbf6c); color: #06210f; }
+  .buy.eq { background: #262c34; color: #4dff9d; border: 1px solid #4dff9d; }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="hud" class="panel">
+  <div class="money" id="money">$30,000</div>
+  <div>🚗 <span class="car" id="carName">Mercedes-Benz</span></div>
+  <div>🛣 Masofa: <span id="dist">0.00</span> km</div>
+  <div class="muted" id="ownedInfo">Garajda: 1 ta moshina</div>
+</div>
+
+<div id="speedo" class="panel">
+  <div class="val" id="kmh">0</div>
+  <div class="unit">KM/S</div>
+  <div class="mode" id="modeTxt">🟡 MASHINADA</div>
+</div>
+
+<div id="help" class="panel">
+  <b>W/S</b> gaz &nbsp; <b>A/D</b> boshqarish &nbsp; <b>Space</b> tormoz<br>
+  <b>F</b> mashinadan tushish / minish &nbsp; <b>M</b> avto-do'kon
+</div>
+
+<div id="buttons">
+  <button class="gbtn" id="btnExit">🚶 Tushish (F)</button>
+  <button class="gbtn accent" id="btnShop">🛒 Avto-do'kon (M)</button>
+</div>
+
+<div id="toasts"></div>
+
+<div id="shop" class="hidden">
+  <div id="shopHead">
+    <div>
+      <h1>🛒 AVTO-DO'KON</h1>
+      <div class="sub">Pulga moshinalar sotib oling — narxlar <b style="color:#ffd83d">$30,000</b> dan <b style="color:#ffd83d">$200,000</b> gacha.
+      🇺🇿 O'zbekiston va 🌍 boshqa davlat moshinalari mavjud. Sotib olingandan keyin uni garajdan tanlang va haydang.</div>
+    </div>
+    <div style="text-align:right">
+      <div class="wallet" id="shopMoney">$30,000</div>
+      <button class="gbtn" id="btnClose" style="margin-top:10px">✖ Yopish (Esc)</button>
+    </div>
+  </div>
+  <div id="grid"></div>
+</div>
+
+<script>
+/* ==========================================================
+   GTA TOSHKENT — 2D top-down shahar o'yini
+   Yo'l, binolar, daraxtlar, piyodalar yo'li, piyodalar,
+   pul, avto-do'kon (30 ming $ - 200 ming $)
+   ========================================================== */
+
+const cv = document.getElementById('game');
+const ctx = cv.getContext('2d');
+
+let W = 0, H = 0, zoom = 1;
+function resize() {
+  W = cv.width = window.innerWidth;
+  H = cv.height = window.innerHeight;
+  zoom = Math.max(0.6, Math.min(1.15, H / 850));
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ---------- Yordamchilar ---------- */
+const rnd = (a) => { const s = Math.sin(a * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+const rnd2 = (a, b) => rnd(a * 57.31 + b * 91.77);
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const clamp = (v, a, b) => (v < a ? a : (v > b ? b : v));
+const fmt = (n) => "$" + Math.floor(n).toLocaleString("en-US");
+
+function shade(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  r = clamp(Math.round(r * f), 0, 255);
+  g = clamp(Math.round(g * f), 0, 255);
+  b = clamp(Math.round(b * f), 0, 255);
+  return "rgb(" + r + "," + g + "," + b + ")";
+}
+function rr(c, x, y, w, h, r) {
+  r = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
+/* ---------- MOSHINA KATALOGI (pulga sotiladi) ---------- */
+const CARS = {
+  mers:    { id:"mers",    name:"Mercedes-Benz C-Class",     country:"🇩🇪 Germaniya — boshlang'ich moshina", price:0,     color:"#0f1116", type:"sedan",  max:210 },
+  nexia:   { id:"nexia",   name:"Chevrolet Nexia 3",         country:"🇺🇿 O'zbekiston (UzAuto)",             price:30000, color:"#c3c9d2", type:"sedan",  max:170 },
+  gentra:  { id:"gentra",  name:"Chevrolet Gentra",          country:"🇺🇿 O'zbekiston (UzAuto)",             price:38000, color:"#e8e8ec", type:"sedan",  max:180 },
+  lacetti: { id:"lacetti", name:"Chevrolet Lacetti",         country:"🇺🇿 O'zbekiston (UzAuto)",             price:42000, color:"#7f8fa6", type:"hatch",  max:185 },
+  malibu:  { id:"malibu",  name:"Chevrolet Malibu 2 (Qora)", country:"🇺🇿🇺🇸 O'zbekiston / USA",             price:52000, color:"#0b0c10", type:"sedan",  max:200 },
+  camry:   { id:"camry",   name:"Toyota Camry 50",           country:"🇯🇵 Yaponiya",                          price:68000, color:"#1c1f26", type:"sedan",  max:212 },
+  c63:     { id:"c63",     name:"Mercedes-AMG C63",          country:"🇩🇪 Germaniya",                         price:95000, color:"#0a0a0f", type:"sports", max:250 },
+  m5:      { id:"m5",      name:"BMW M5 Competition",        country:"🇩🇪 Germaniya",                         price:110000,color:"#15407a", type:"sports", max:255 },
+  range:   { id:"range",   name:"Range Rover Autobiography", country:"🇬🇧 Buyuk Britaniya",                   price:135000,color:"#20303a", type:"suv",    max:225 },
+  lambo:   { id:"lambo",   name:"Lamborghini Huracán",       country:"🇮🇹 Italiya",                           price:180000,color:"#f4d004", type:"super",  max:310 },
+  bugatti: { id:"bugatti", name:"Bugatti Chiron",            country:"🇫🇷 Fransiya",                          price:200000,color:"#12306e", type:"super",  max:340 }
+};
+const SHOP_IDS = ["nexia","gentra","lacetti","malibu","camry","c63","m5","range","lambo","bugatti"];
+
+/* ---------- SAQLASH ---------- */
+const SAVE_KEY = "gta_tashkent_v1";
+let save = { money: 30000, owned: ["mers"], current: "mers", distance: 0 };
+try {
+  const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+  if (s && typeof s.money === "number" && s.owned && s.current && CARS[s.current]) save = s;
+  if (save.owned.indexOf("mers") === -1) save.owned.push("mers");
+} catch (e) {}
+function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
+
+/* ---------- BOSHQARUV ---------- */
+const keys = {};
+let shopOpen = false;
+window.addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+  keys[k] = true;
+  if (["arrowup","arrowdown","arrowleft","arrowright"," "].indexOf(k) !== -1) e.preventDefault();
+  if (k === "f" && !shopOpen) toggleCar();
+  if (k === "m") toggleShop(!shopOpen);
+  if (k === "escape") toggleShop(false);
+});
+window.addEventListener("keyup", (e) => { keys[e.key.toLowerCase()] = false; });
+window.addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
+
+/* ---------- O'YINCHI ---------- */
+const P = { mode: "car", x: 40, y: 0, angle: 0, speed: 0, fx: 185, fy: 0, fa: 0, phase: 0 };
+const cam = { x: 40, y: -60 };
+let shake = 0, hitCd = 0, earnBuf = 0, drivePx = 0, saveT = 0;
+const particles = [], floaters = [];
+
+/* ---------- DUNYO O'LCHAMLARI ---------- */
+const ROAD = 160;              // asfalt yarmi (jami 320 px kenglikda)
+const SW_L = 160, SW_R = 250;  // piyodalar yo'li
+const TREE_X = 230;            // daraxtlar
+const BLOCK_END = 254;         // binolar boshlanadi
+const CROSS_STEP = 1500;       // zebra (piyodalar o'tish joyi)
+const LANE_N = [40, 120];      // tepaga (shimol) — o'ng tomon
+const LANE_S = [-40, -120];    // pastga (janub) — o'ng tomon
+
+/* ---------- TRAFFIC: O'ZBEK VA BOSHQA DAVLAT MOSHINALARI ---------- */
+const TRAFFIC_TYPES = [
+  { name:"Cobalt",  country:"🇺🇿", colors:["#f5f6f7","#2f3a46","#7d8a99"], type:"sedan", kmh:[55,105] },
+  { name:"Gentra",  country:"🇺🇿", colors:["#ffffff","#d5d8dd","#2b2f36"], type:"sedan", kmh:[55,105] },
+  { name:"Nexia 3", country:"🇺🇿", colors:["#a9b1bb","#3a4048","#8f1f1f"], type:"sedan", kmh:[50,95]  },
+  { name:"Spark",   country:"🇺🇿", colors:["#2856b8","#c0392b","#e8e8ea"], type:"hatch", kmh:[50,90]  },
+  { name:"Damas",   country:"🇺🇿", colors:["#f2f2f2","#cfd3d8"],           type:"van",   kmh:[45,80]  },
+  { name:"Lacetti", country:"🇺🇿", colors:["#7f8fa6","#e6e6e6"],           type:"hatch", kmh:[55,100] },
+  { name:"Malibu 2",country:"🇺🇸", colors:["#0b0c10","#dfe3e8"],           type:"sedan", kmh:[70,120] },
+  { name:"Toyota Camry", country:"🇯🇵", colors:["#15181d","#e9ecef","#3c4650"], type:"sedan", kmh:[75,130] },
+  { name:"Hyundai Sonata", country:"🇰🇷", colors:["#1f2937","#c9ced6"],    type:"sedan", kmh:[75,125] },
+  { name:"BMW X5",  country:"🇩🇪", colors:["#101418","#4a5560"],           type:"suv",   kmh:[80,135] },
+  { name:"Mercedes E", country:"🇩🇪", colors:["#0c0d11","#8d949d"],        type:"sedan", kmh:[80,140] },
+  { name:"Audi A6", country:"🇩🇪", colors:["#232a33","#b9bec6"],           type:"sedan", kmh:[80,135] },
+  { name:"VW Golf", country:"🇩🇪", colors:["#2b2f36","#26519a"],           type:"hatch", kmh:[65,115] },
+  { name:"Taksi (Prius)", country:"🇺🇿🇯🇵", colors:["#f7c948"],            type:"hatch", kmh:[60,105] },
+  { name:"Lada Vesta", country:"🇷🇺", colors:["#d9dde2","#2f4f80"],        type:"sedan", kmh:[60,110] },
+  { name:"Kia K5",  country:"🇰🇷", colors:["#16324f","#e4e7eb"],           type:"sedan", kmh:[75,125] },
+  { name:"Mercedes-AMG C63", country:"🇩🇪", colors:["#0a0a0f"],            type:"sports",kmh:[95,150] },
+  { name:"BMW M5",  country:"🇩🇪", colors:["#15407a"],                     type:"sports",kmh:[95,150] },
+  { name:"Lamborghini", country:"🇮🇹", colors:["#f4d004"],                 type:"super", kmh:[110,170] },
+  { name:"Bugatti", country:"🇫🇷", colors:["#12306e"],                     type:"super", kmh:[110,175] }
+];
+function makePlate() {
+  const L = "ABVKMEROPTACHH";
+  const r = () => Math.floor(Math.random() * 10);
+  const a = () => L[Math.floor(Math.random() * L.length)];
+  return "01 " + a() + " " + r() + r() + r() + " " + a() + a();
+}
+const traffic = [];
+function laneFor(dir) { return dir === -1 ? LANE_N[Math.random() < 0.5 ? 0 : 1]
+                                          : LANE_S[Math.random() < 0.5 ? 0 : 1]; }
+function fillTraffic(c) {
+  const t = pick(TRAFFIC_TYPES);
+  c.type = t.type; c.color = pick(t.colors); c.name = t.name; c.country = t.country;
+  c.kmh = t.kmh[0] + Math.random() * (t.kmh[1] - t.kmh[0]);
+  c.speed = c.kmh * 2.6;
+  c.plate = makePlate();
+  c.stopT = 0; c.exited = false;
+  return c;
+}
+function placeTraffic(c, side) {           // side: -1 tepadan, +1 pastdan
+  fillTraffic(c);
+  c.dir = side;
+  const vh = H / zoom;
+  c.y = cam.y + side * (vh / 2 + 300 + Math.random() * 950);
+  c.x = laneFor(c.dir);
+}
+function initTraffic() {
+  traffic.length = 0;
+  for (let i = 0; i < 20; i++) {
+    const c = {};
+    placeTraffic(c, Math.random() < 0.5 ? -1 : 1);
+    traffic.push(c);
+  }
+}
+
+/* ---------- PIYODALAR (NPC — piyodalar yo'liida yuradi) ---------- */
+const PED_TOPS = ["#e74c3c","#3498db","#f1c40f","#9b59b6","#1abc9c","#e67e22","#ecf0f1","#2ecc71","#34495e","#e84393"];
+const PED_PANTS = ["#2c3e50","#1f2a37","#4a4a52","#6b4f2a","#22303f"];
+const peds = [];
+function newPed(p) {
+  p = p || {};
+  p.side = Math.random() < 0.5 ? -1 : 1;
+  p.xTarget = p.side * (172 + Math.random() * 26);
+  p.x = p.xTarget;
+  p.dir = Math.random() < 0.5 ? -1 : 1;
+  p.speed = 22 + Math.random() * 30;
+  p.phase = Math.random() * 10;
+  p.shirt = pick(PED_TOPS);
+  p.pants = pick(PED_PANTS);
+  p.skin = pick(["#f0c8a0","#e0ac7e","#c68863","#8d5524","#f7d7a8"]);
+  p.hair = pick(["#1c1c1c","#3b2314","#5a3a1a","#111111"]);
+  p.mode = "walk";
+  p.crossCd = 3 + Math.random() * 8;
+  return p;
+}
+function initPeds() {
+  peds.length = 0;
+  const vh = H / zoom;
+  for (let i = 0; i < 30; i++) {
+    const p = newPed({});
+    p.y = cam.y + (Math.random() - 0.5) * (vh + 1600);
+    peds.push(p);
+  }
+}
+function spawnPedFromCar(car) {
+  const p = newPed({});
+  p.side = car.x > 0 ? 1 : -1;
+  p.mode = "exit";
+  p.x = car.x + (car.x > 0 ? 26 : -26);
+  p.xTarget = p.side * 182;
+  p.y = car.y + 4;
+  p.dir = car.dir;
+  peds.push(p);
+}
+
+/* ---------- MOSHINA SPRITI (GTA uslubida) ---------- */
+const DIMS = { sedan:{l:86,w:40}, hatch:{l:74,w:38}, suv:{l:94,w:47}, van:{l:98,w:44}, sports:{l:92,w:47}, super:{l:100,w:51} };
+function drawCar(c, o) {
+  const d = DIMS[o.type] || DIMS.sedan;
+  const L = d.l, Wd = d.w;
+  const col = o.color;
+  const sporty = (o.type === "sports" || o.type === "super");
+  c.save();
+  c.translate(o.x, o.y);
+  c.rotate(o.angle || 0);
+
+  c.fillStyle = "rgba(0,0,0,0.30)";
+  rr(c, -Wd/2 + 6, -L/2 + 9, Wd, L, 12); c.fill();
+
+  c.fillStyle = "#0c0c0e";
+  rr(c, -Wd/2 - 3, -L/2 + 13, 8, 18, 3); c.fill();
+  rr(c, Wd/2 - 5, -L/2 + 13, 8, 18, 3); c.fill();
+  rr(c, -Wd/2 - 3, L/2 - 31, 8, 18, 3); c.fill();
+  rr(c, Wd/2 - 5, L/2 - 31, 8, 18, 3); c.fill();
+
+  const g = c.createLinearGradient(-Wd/2, 0, Wd/2, 0);
+  g.addColorStop(0, shade(col, 0.70));
+  g.addColorStop(0.35, col);
+  g.addColorStop(0.75, shade(col, 1.15));
+  g.addColorStop(1, shade(col, 0.66));
+  c.fillStyle = g;
+  rr(c, -Wd/2, -L/2, Wd, L, sporty ? 9 : 11); c.fill();
+
+  c.fillStyle = "rgba(255,255,255,0.10)";
+  rr(c, -Wd/2 + 5, -L/2 + 4, Wd - 10, 15, 6); c.fill();
+
+  c.fillStyle = "#151c25";
+  rr(c, -Wd/2 + 6, -L/2 + 21, Wd - 12, 12, 4); c.fill();
+  c.fillStyle = shade(col, 0.88);
+  rr(c, -Wd/2 + 5, -L/2 + 32, Wd - 10, L * 0.30, 5); c.fill();
+  c.fillStyle = "#151c25";
+  rr(c, -Wd/2 + 6, -L/2 + 32 + L * 0.30, Wd - 12, 11, 4); c.fill();
+
+  if (sporty) { c.fillStyle = "rgba(255,255,255,0.18)"; c.fillRect(-3, -L/2 + 2, 6, L - 4); }
+  if (o.type === "super") { c.fillStyle = "#101216"; rr(c, -Wd/2 - 2, L/2 - 13, Wd + 4, 8, 3); c.fill(); }
+
+  c.fillStyle = "#fff6c7";
+  rr(c, -Wd/2 + 4, -L/2 + 2, 11, 7, 3); c.fill();
+  rr(c, Wd/2 - 15, -L/2 + 2, 11, 7, 3); c.fill();
+
+  c.fillStyle = o.brake ? "#ff2d2d" : "#c62828";
+  rr(c, -Wd/2 + 4, L/2 - 9, 12, 7, 3); c.fill();
+  rr(c, Wd/2 - 16, L/2 - 9, 12, 7, 3); c.fill();
+
+  c.fillStyle = "rgba(0,0,0,0.55)";
+  rr(c, -Wd/2 + 12, -L/2 + 1, Wd - 24, 5, 2); c.fill();
+
+  c.fillStyle = shade(col, 0.72);
+  c.fillRect(-Wd/2 - 4, -L/2 + 31, 5, 8);
+  c.fillRect(Wd/2 - 1, -L/2 + 31, 5, 8);
+
+  if (o.plate) {
+    c.fillStyle = "#f5f5f0";
+    rr(c, -13, L/2 - 9, 26, 8, 2); c.fill();
+    c.fillStyle = "#111";
+    c.font = "700 6px monospace";
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillText(o.plate, 0, L/2 - 4.5);
+  }
+  c.restore();
+}
+
+/* ---------- PIYODA SPRITI ---------- */
+function drawPerson(c, x, y, ang, phase, p, scale) {
+  scale = scale || 1;
+  c.fillStyle = "rgba(0,0,0,0.28)";
+  c.beginPath(); c.ellipse(x + 4, y + 6, 11 * scale, 8 * scale, 0, 0, Math.PI * 2); c.fill();
+  c.save();
+  c.translate(x, y); c.rotate(ang); c.scale(scale, scale);
+  const sw = Math.sin(phase) * 5;
+  c.strokeStyle = p.pants; c.lineWidth = 5; c.lineCap = "round";
+  c.beginPath(); c.moveTo(-3, 3); c.lineTo(-3 + sw * 0.5, 12 + Math.max(0, sw)); c.stroke();
+  c.beginPath(); c.moveTo(3, 3);  c.lineTo(3 - sw * 0.5, 12 + Math.max(0, -sw)); c.stroke();
+  c.strokeStyle = p.shirt; c.lineWidth = 4;
+  c.beginPath(); c.moveTo(-7, -4); c.lineTo(-8 - sw * 0.4, 5); c.stroke();
+  c.beginPath(); c.moveTo(7, -4);  c.lineTo(8 + sw * 0.4, 5); c.stroke();
+  c.fillStyle = p.shirt;
+  rr(c, -7, -8, 14, 15, 5); c.fill();
+  c.fillStyle = p.skin;
+  c.beginPath(); c.arc(0, -13, 6, 0, Math.PI * 2); c.fill();
+  c.fillStyle = p.hair;
+  c.beginPath(); c.arc(0, -14, 6, Math.PI, Math.PI * 2); c.fill();
+  c.restore();
+}
+
+/* ---------- DARAXT ---------- */
+function drawTree(x, y) {
+  ctx.fillStyle = "rgba(0,0,0,0.26)";
+  ctx.beginPath(); ctx.ellipse(x + 16, y + 18, 30, 23, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#5b4029";
+  ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#2c6b33";
+  ctx.beginPath(); ctx.arc(x, y, 27, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#3a8b41";
+  ctx.beginPath(); ctx.arc(x - 7, y - 8, 18, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#4cab55";
+  ctx.beginPath(); ctx.arc(x - 12, y - 13, 9, 0, Math.PI * 2); ctx.fill();
+}
+
+/* ---------- BINO ---------- */
+const BPAL = [["#dcc9a6","#c1ad8b"],["#b9c5d0","#9fabb9"],["#e0b6a0","#c79d86"],
+              ["#a9b8a2","#8fa08a"],["#d3d9e0","#b7bfc9"],["#cfc5df","#b6abc9"],["#c9b29a","#ae9880"]];
+function drawBuilding(x, y, w, h, seed) {
+  const p = BPAL[Math.floor(rnd(seed) * BPAL.length)];
+  ctx.fillStyle = "rgba(0,0,0,0.34)";
+  ctx.fillRect(x + 22, y + 26, w, h);
+  ctx.fillStyle = p[1];
+  ctx.fillRect(x - 6, y - 6, w + 12, h + 12);
+  ctx.fillStyle = p[0];
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = "rgba(0,0,0,0.42)"; ctx.lineWidth = 3;
+  ctx.strokeRect(x, y, w, h);
+  ctx.fillStyle = "rgba(0,0,0,0.13)";
+  ctx.fillRect(x + 15, y + 15, Math.max(4, w - 30), Math.max(4, h - 30));
+  const n = 2 + Math.floor(rnd2(seed, 3) * 3);
+  for (let i = 0; i < n; i++) {
+    const rx = x + 20 + rnd2(seed, i + 7) * Math.max(8, w - 75);
+    const ry = y + 20 + rnd2(seed, i + 17) * Math.max(8, h - 75);
+    ctx.fillStyle = "rgba(255,255,255,0.16)";
+    ctx.fillRect(rx, ry, 30, 22);
+    ctx.strokeStyle = "rgba(0,0,0,0.30)"; ctx.lineWidth = 2; ctx.strokeRect(rx, ry, 30, 22);
+  }
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  ctx.beginPath(); ctx.arc(x + w - 36, y + 36, 15, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(20,30,45,0.55)";
+  const inner = x < 0 ? x + w - 15 : x + 5;
+  for (let wy = y + 18; wy < y + h - 26; wy += 42) ctx.fillRect(inner, wy, 10, 26);
+}
+
+/* ---------- DUNYO ---------- */
+function drawWorld() {
+  const vw = W / zoom, vh = H / zoom;
+  const x0 = cam.x - vw/2 - 140, x1 = cam.x + vw/2 + 140;
+  const y0 = cam.y - vh/2 - 140, y1 = cam.y + vh/2 + 140;
+
+  ctx.fillStyle = "#4b7442";
+  ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+
+  ctx.fillStyle = "#33363c";
+  ctx.fillRect(-ROAD, y0, ROAD * 2, y1 - y0);
+  ctx.fillStyle = "rgba(0,0,0,0.15)";
+  for (let yy = Math.floor(y0 / 260) * 260; yy < y1; yy += 260) {
+    ctx.fillRect(-ROAD + 30, yy + 40, 90, 60);
+    ctx.fillRect(40, yy + 150, 80, 50);
+  }
+
+  ctx.fillStyle = "#9ba1a8";
+  ctx.fillRect(SW_L, y0, SW_R - SW_L, y1 - y0);
+  ctx.fillRect(-SW_R, y0, SW_R - SW_L, y1 - y0);
+  ctx.strokeStyle = "rgba(0,0,0,0.15)"; ctx.lineWidth = 2;
+  for (let yy = Math.floor(y0 / 60) * 60; yy < y1; yy += 60) {
+    ctx.beginPath(); ctx.moveTo(SW_L, yy); ctx.lineTo(SW_R, yy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-SW_R, yy); ctx.lineTo(-SW_L, yy); ctx.stroke();
+  }
+  ctx.fillStyle = "#cfd4d9";
+  ctx.fillRect(SW_L, y0, 7, y1 - y0);
+  ctx.fillRect(SW_R - 7, y0, 7, y1 - y0);
+  ctx.fillRect(-SW_L - 7, y0, 7, y1 - y0);
+  ctx.fillRect(-SW_R, y0, 7, y1 - y0);
+
+  ctx.fillStyle = "#e8e8e3";
+  ctx.fillRect(-ROAD + 5, y0, 4, y1 - y0);
+  ctx.fillRect(ROAD - 9, y0, 4, y1 - y0);
+  ctx.fillStyle = "#e9c932";
+  ctx.fillRect(-9, y0, 4, y1 - y0);
+  ctx.fillRect(5, y0, 4, y1 - y0);
+  ctx.fillStyle = "rgba(240,240,235,0.85)";
+  for (let yy = Math.floor(y0 / 72) * 72; yy < y1; yy += 72) {
+    ctx.fillRect(-84, yy, 5, 36);
+    ctx.fillRect(-124, yy, 5, 36);
+    ctx.fillRect(79, yy, 5, 36);
+    ctx.fillRect(119, yy, 5, 36);
+  }
+
+  const cFirst = Math.ceil(y0 / CROSS_STEP) * CROSS_STEP;
+  for (let cy = cFirst; cy < y1; cy += CROSS_STEP) {
+    ctx.fillStyle = "rgba(245,245,240,0.92)";
+    for (let xx = -ROAD + 14; xx < ROAD - 20; xx += 44) ctx.fillRect(xx, cy - 52, 26, 104);
+  }
+
+  const SEG = 330;
+  const i0 = Math.floor(y0 / SEG) - 1, i1 = Math.ceil(y1 / SEG) + 1;
+  for (let i = i0; i <= i1; i++) {
+    for (const side of [-1, 1]) {
+      const gap = 16 + rnd2(i, side) * 60;
+      const len = 200 + rnd2(i, side + 5) * 100;
+      const depth = 175 + rnd2(i, side + 9) * 230;
+      const fy = i * SEG + gap;
+      const fx = side * (BLOCK_END + 4);
+      const bx = side > 0 ? fx : fx - depth;
+      drawBuilding(bx, fy, depth, len, i * 3.7 + side);
+    }
+  }
+
+  const tStep = 185;
+  const t0 = Math.floor(y0 / tStep) - 1, t1 = Math.ceil(y1 / tStep) + 1;
+  for (let i = t0; i <= t1; i++) {
+    for (const side of [-1, 1]) {
+      const ty = i * tStep + (side > 0 ? 0 : 92);
+      drawTree(side * TREE_X, ty);
+    }
+  }
+
+  for (let i = t0; i <= t1; i++) {
+    const ly = i * tStep + 140;
+    for (const side of [-1, 1]) {
+      const lx = side * (SW_L + 13);
+      ctx.fillStyle = "rgba(255,236,160,0.20)";
+      ctx.beginPath(); ctx.arc(lx, ly, 13, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#3d434b";
+      ctx.beginPath(); ctx.arc(lx, ly, 6, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+/* ---------- TA'SIRLAR ---------- */
+function toast(msg, cls) {
+  const box = document.getElementById("toasts");
+  const d = document.createElement("div");
+  d.className = "toast " + (cls || "");
+  d.textContent = msg;
+  box.appendChild(d);
+  setTimeout(() => { d.style.opacity = "0"; d.style.transition = "opacity .4s"; }, 2200);
+  setTimeout(() => { if (d.parentNode) d.parentNode.removeChild(d); }, 2700);
+}
+function floater(x, y, txt, col) { floaters.push({ x, y, txt, col, life: 1.4 }); }
+function burst(x, y, col, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, s = 60 + Math.random() * 140;
+    particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: .7, max: .7, col, r: 3 + Math.random() * 4 });
+  }
+}
+function earn(n, x, y) {
+  save.money += n;
+  if (x !== undefined) floater(x, y, "+" + fmt(n), "#ffd83d");
+  persist();
+}
+function hit(n, msg) {
+  save.money = Math.max(0, save.money - n);
+  hitCd = 1.1; shake = 16;
+  toast(msg, "bad");
+  persist();
+}
+
+/* ---------- MASHINAGA MINISH / TUSHISH ---------- */
+function toggleCar() {
+  if (P.mode === "car") {
+    P.mode = "foot";
+    P.fx = (P.x >= 0 ? 186 : -186);
+    P.fy = P.y;
+    P.fa = P.x >= 0 ? Math.PI / 2 : -Math.PI / 2;
+    toast("🚶 Mashinadan tushdingiz — piyodalar yo'liida yuring");
+  } else {
+    const carDist = Math.hypot(P.fx - P.x, P.fy - P.y);
+    if (carDist < 90) {
+      P.mode = "car";
+      P.speed = 0;
+      toast("🚗 Moshinaga chiqdingiz!", "good");
+    } else {
+      toast("Mashinaga yaqinroq boring! (F)", "bad");
+    }
+  }
+}
+
+/* ---------- AVTO-DO'KON ---------- */
+const shopEl = document.getElementById("shop");
+function toggleShop(open) {
+  shopOpen = open;
+  shopEl.classList.toggle("hidden", !open);
+  if (open) { renderShop(); for (const k in keys) keys[k] = false; }
+}
+document.getElementById("btnShop").onclick = () => toggleShop(true);
+document.getElementById("btnClose").onclick = () => toggleShop(false);
+document.getElementById("btnExit").onclick = () => { if (!shopOpen) toggleCar(); };
+
+function renderShop() {
+  document.getElementById("shopMoney").textContent = fmt(save.money);
+  const grid = document.getElementById("grid");
+  grid.innerHTML = "";
+  for (const id of SHOP_IDS) {
+    const car = CARS[id];
+    const owned = save.owned.indexOf(id) !== -1;
+    const equipped = save.current === id;
+    const card = document.createElement("div");
+    card.className = "card";
+
+    const cvp = document.createElement("canvas");
+    cvp.width = 280; cvp.height = 108;
+    card.appendChild(cvp);
+
+    const nm = document.createElement("div"); nm.className = "nm"; nm.textContent = car.name;
+    const ct = document.createElement("div"); ct.className = "ctry"; ct.textContent = car.country;
+    const row = document.createElement("div"); row.className = "row";
+    const pr = document.createElement("div"); pr.className = "price"; pr.textContent = fmt(car.price);
+    const btn = document.createElement("button");
+    btn.className = "buy";
+    if (equipped) { btn.className = "buy eq"; btn.textContent = "✅ Tanlangan"; btn.disabled = true; }
+    else if (owned) { btn.className = "buy owned"; btn.textContent = "Tanlash"; }
+    else if (save.money >= car.price) { btn.textContent = "Sotib olish"; }
+    else { btn.textContent = "Pul yetmaydi"; btn.disabled = true; }
+    row.appendChild(pr); row.appendChild(btn);
+    const sp = document.createElement("div"); sp.className = "spec";
+    sp.textContent = "⚡ Maks: " + car.max + " km/s  •  " + car.type.toUpperCase();
+
+    card.appendChild(nm); card.appendChild(ct); card.appendChild(row); card.appendChild(sp);
+    grid.appendChild(card);
+
+    const c2 = cvp.getContext("2d");
+    c2.clearRect(0, 0, cvp.width, cvp.height);
+    c2.save();
+    c2.translate(cvp.width / 2, cvp.height / 2);
+    c2.scale(0.85, 0.85);
+    drawCar(c2, { x: 0, y: 0, angle: 0, color: car.color, type: car.type, plate: "" });
+    c2.restore();
+
+    btn.onclick = () => {
+      if (save.owned.indexOf(id) !== -1) {
+        save.current = id; persist(); renderShop(); updateHUD();
+        toast(car.name + " tanlandi ✅", "good");
+      } else if (save.money >= car.price) {
+        save.money -= car.price;
+        save.owned.push(id);
+        save.current = id;
+        persist(); renderShop(); updateHUD();
+        toast("🎉 Sotib olindi: " + car.name + " — " + fmt(car.price), "good");
+      }
+    };
+  }
+}
+
+/* ---------- HUD ---------- */
+const moneyEl = document.getElementById("money");
+const carNameEl = document.getElementById("carName");
+const distEl = document.getElementById("dist");
+const ownedEl = document.getElementById("ownedInfo");
+const kmhEl = document.getElementById("kmh");
+const modeEl = document.getElementById("modeTxt");
+const exitBtn = document.getElementById("btnExit");
+function updateHUD() {
+  moneyEl.textContent = fmt(save.money);
+  const car = CARS[save.current] || CARS.mers;
+  carNameEl.textContent = car.name;
+  distEl.textContent = (save.distance / 8000).toFixed(2);
+  ownedEl.textContent = "Garajda: " + save.owned.length + " ta moshina";
+  kmhEl.textContent = P.mode === "car" ? Math.round(Math.abs(P.speed) / 2.6) : "0";
+  modeEl.textContent = P.mode === "car" ? "🟡 MASHINADA" : "🚶 PIYODA";
+  exitBtn.textContent = P.mode === "car" ? "🚶 Tushish (F)" : "🚗 Minish (F)";
+}
+
+/* ---------- YANGILASH ---------- */
+function updateCar(dt) {
+  const def = CARS[save.current] || CARS.mers;
+  const maxPx = def.max * 2.6;
+  const ax = Math.abs(P.x);
+  const off = ax > SW_L;
+  const maxHere = maxPx * (ax > BLOCK_END ? 0.25 : (off ? 0.55 : 1));
+
+  const gas = keys["w"] || keys["arrowup"];
+  const brake = keys["s"] || keys["arrowdown"];
+  const hand = keys[" "];
+  const steer = ((keys["d"] || keys["arrowright"]) ? 1 : 0) - ((keys["a"] || keys["arrowleft"]) ? 1 : 0);
+  const acc = maxPx * 0.55;
+
+  if (gas) P.speed += acc * dt;
+  if (brake) P.speed -= acc * 1.4 * dt;
+  if (hand) P.speed -= Math.sign(P.speed) * Math.abs(P.speed) * 3.4 * dt;
+  if (!gas && !brake && !hand) {
+    P.speed -= P.speed * 0.7 * dt;
+    if (Math.abs(P.speed) < 3) P.speed = 0;
+  }
+  P.speed = clamp(P.speed, -maxPx * 0.28, maxHere);
+
+  const sp = Math.abs(P.speed);
+  if (sp > 5 && steer !== 0) {
+    const ratio = clamp(sp / (maxPx * 0.5), 0, 1);
+    const turn = (1.05 + 1.45 * ratio) * (off ? 0.7 : 1);
+    P.angle += steer * turn * dt * (P.speed >= 0 ? 1 : -1);
+  }
+
+  P.x += Math.sin(P.angle) * P.speed * dt;
+  P.y -= Math.cos(P.angle) * P.speed * dt;
+
+  if (Math.abs(P.x) > BLOCK_END - 8) {
+    P.x = Math.sign(P.x) * (BLOCK_END - 8);
+    P.speed *= -0.2; shake = 10;
+  }
+
+  const tStep = 185;
+  for (const side of [-1, 1]) {
+    const iNear = Math.round(P.y / tStep);
+    for (let i = iNear - 1; i <= iNear + 1; i++) {
+      const ty = i * tStep + (side > 0 ? 0 : 92);
+      const dx = P.x - side * TREE_X, dy = P.y - ty;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < 42 * 42) {
+        const d = Math.max(6, Math.sqrt(d2));
+        P.x += (dx / d) * 9; P.y += (dy / d) * 9;
+        P.speed *= -0.2; shake = Math.max(shake, 8);
+        burst(side * TREE_X, ty, "#4cab55", 6);
+      }
+    }
+  }
+
+  drivePx += sp * dt;
+  const fast = sp > maxPx * 0.6 ? 1.7 : 1;
+  earnBuf += sp * dt * 0.24 * fast;
+
+  if (sp > 40 && Math.random() < 0.55) {
+    const bx = P.x - Math.sin(P.angle) * 44, by = P.y + Math.cos(P.angle) * 44;
+    particles.push({ x: bx + (Math.random() - .5) * 16, y: by, vx: (Math.random() - .5) * 14,
+      vy: (Math.random() - .5) * 14, life: .6, max: .6, col: "rgba(190,190,196,0.55)", r: 4 + Math.random() * 3 });
+  }
+
+  if (sp > 40 && hitCd <= 0) {
+    for (let i = 0; i < peds.length; i++) {
+      const p = peds[i];
+      const dx = p.x - P.x, dy = p.y - P.y;
+      if (dx * dx + dy * dy < 30 * 30) {
+        hit(500, "🚶 Piyodaga urildi! Jarima $500");
+        burst(p.x, p.y, "#c0392b", 14);
+        floater(p.x, p.y, "-$500", "#ff5252");
+        const np = newPed({});
+        np.y = P.y + (Math.random() < .5 ? -1 : 1) * (H / zoom / 2 + 400);
+        peds[i] = np;
+        break;
+      }
+    }
+  }
+
+  save.distance += sp * dt;
+}
+
+function updateFoot(dt) {
+  let dx = 0, dy = 0;
+  if (keys["w"] || keys["arrowup"]) dy -= 1;
+  if (keys["s"] || keys["arrowdown"]) dy += 1;
+  if (keys["a"] || keys["arrowleft"]) dx -= 1;
+  if (keys["d"] || keys["arrowright"]) dx += 1;
+  const run = keys["shift"] ? 1.75 : 1;
+  const onSidewalk = Math.abs(P.fx) >= SW_L;
+  const spd = (onSidewalk ? 120 : 92) * run;
+  if (dx || dy) {
+    const m = Math.hypot(dx, dy);
+    P.fx += (dx / m) * spd * dt;
+    P.fy += (dy / m) * spd * dt;
+    P.fa = Math.atan2(dx, -dy);
+    P.phase += dt * 11 * run;
+  }
+  P.fx = clamp(P.fx, -BLOCK_END + 8, BLOCK_END - 8);
+  P.x = P.fx; P.y = P.fy;
+}
+
+function updateTraffic(dt) {
+  const vhHalf = H / zoom / 2 + 500;
+
+  for (const c of traffic) {
+    if (c.stopT > 0) {
+      c.stopT -= dt;
+      c.speed = Math.max(0, c.speed - 300 * dt);
+      if (c.stopT <= 0) c.speed = c.kmh * 2.6;
+    }
+    if (!c.exited && Math.abs(c.y - cam.y) < vhHalf * 0.7 && Math.random() < dt * 0.05) {
+      c.exited = true; c.stopT = 4.5;
+      spawnPedFromCar(c);
+    }
+  }
+
+  for (const c of traffic) {
+    let bestGap = 1e9, leaderSp = null;
+    for (const o of traffic) {
+      if (o === c || o.dir !== c.dir || Math.abs(o.x - c.x) > 14) continue;
+      const gap = (o.y - c.y) * c.dir;
+      if (gap > 0 && gap < bestGap) { bestGap = gap; leaderSp = o.speed; }
+    }
+    if (leaderSp !== null && bestGap < 150 && leaderSp < c.speed) {
+      c.speed = Math.max(0, leaderSp + (bestGap < 100 ? -30 : 0));
+    } else if (c.stopT <= 0) {
+      c.speed += (c.kmh * 2.6 - c.speed) * Math.min(1, dt * 1.4);
+    }
+    c.y += c.dir * c.speed * dt;
+  }
+
+  for (const c of traffic) {
+    if (c.y < cam.y - vhHalf) placeTraffic(c, 1);
+    else if (c.y > cam.y + vhHalf) placeTraffic(c, -1);
+  }
+
+  if (P.mode === "car" && hitCd <= 0) {
+    for (const c of traffic) {
+      const dx = Math.abs(c.x - P.x), dy = Math.abs(c.y - P.y);
+      if (dx < 34 && dy < 46) {
+        const push = c.x >= P.x ? 1 : -1;
+        P.x += push * 14; c.x -= push * 7;
+        P.speed *= -0.25;
+        c.speed *= 0.5;
+        burst((P.x + c.x) / 2, (P.y + c.y) / 2, "#ffca28", 16);
+        hit(200, "💥 Tirbandlik! Ta'mirlash $200");
+        floater(P.x, P.y, "-$200", "#ff5252");
+        break;
+      }
+    }
+  }
+}
+
+function updatePeds(dt) {
+  const vh = H / zoom;
+  for (let i = 0; i < peds.length; i++) {
+    const p = peds[i];
+    p.phase += dt * (p.mode === "exit" ? 13 : 8);
+
+    if (p.mode === "exit") {
+      p.x += (p.xTarget - p.x) * Math.min(1, dt * 3);
+      if (Math.abs(p.x - p.xTarget) < 7) { p.mode = "walk"; p.dir = Math.random() < .5 ? -1 : 1; }
+    } else {
+      p.y += p.dir * p.speed * dt;
+      p.crossCd -= dt;
+      if (p.crossCd <= 0) {
+        p.crossCd = 6 + Math.random() * 10;
+        if (Math.random() < 0.4) p.xTarget = -Math.sign(p.x || 1) * (172 + Math.random() * 26);
+      }
+      p.x += (p.xTarget - p.x) * Math.min(1, dt * 2.4);
+    }
+
+    if (p.y < cam.y - vh / 2 - 550 || p.y > cam.y + vh / 2 + 550) {
+      const np = newPed({});
+      np.y = cam.y + (p.dir === -1 ? vh / 2 + 320 + Math.random() * 260
+                                   : -vh / 2 - 320 - Math.random() * 260);
+      peds[i] = np;
+    }
+  }
+}
+
+function updateFX(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vx *= 0.94; p.vy *= 0.94;
+  }
+  for (let i = floaters.length - 1; i >= 0; i--) {
+    const f = floaters[i];
+    f.life -= dt; f.y -= 34 * dt;
+    if (f.life <= 0) floaters.splice(i, 1);
+  }
+  shake = Math.max(0, shake - dt * 26);
+  hitCd = Math.max(0, hitCd - dt);
+}
+
+function updateCamera(dt) {
+  let tx = P.x, ty = P.y;
+  if (P.mode === "car") {
+    tx += Math.sin(P.angle) * P.speed * 0.17;
+    ty -= Math.cos(P.angle) * P.speed * 0.17;
+  }
+  const k = 1 - Math.exp(-6 * dt);
+  cam.x += (tx - cam.x) * k;
+  cam.y += (ty - cam.y) * k;
+}
+
+/* ---------- RENDER ---------- */
+function render() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  const sx = shake > 0 ? (Math.random() - .5) * shake : 0;
+  const sy = shake > 0 ? (Math.random() - .5) * shake : 0;
+  ctx.translate(W / 2 + sx, H / 2 + sy);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-cam.x, -cam.y);
+
+  drawWorld();
+
+  // piyodalar
+  for (const p of peds) drawPerson(ctx, p.x, p.y, p.dir === -1 ? 0 : Math.PI, p.phase, p, 1);
+
+  // traffik moshinalari
+  for (const c of traffic) {
+    drawCar(ctx, { x: c.x, y: c.y, angle: c.dir === -1 ? 0 : Math.PI, color: c.color,
+      type: c.type, plate: c.plate, brake: c.stopT > 0 });
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.font = "700 9px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(c.country + " " + c.name, c.x, c.y - (DIMS[c.type] || DIMS.sedan).l / 2 - 8);
+    ctx.restore();
+  }
+
+  // o'yinchi
+  if (P.mode === "car") {
+    const def = CARS[save.current] || CARS.mers;
+    drawCar(ctx, { x: P.x, y: P.y, angle: P.angle, color: def.color, type: def.type,
+      plate: "01 A 777 AA", brake: keys["s"] || keys["arrowdown"] || keys[" "] });
+    ctx.save();
+    ctx.fillStyle = "#ffd83d"; ctx.font = "800 11px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("⭐ " + def.name, P.x, P.y - (DIMS[def.type] || DIMS.sedan).l / 2 - 12);
+    ctx.restore();
+  } else {
+    drawPerson(ctx, P.fx, P.fy, P.fa, P.phase,
+      { shirt: "#0984e3", pants: "#22303f", skin: "#f0c8a0", hair: "#1c1c1c" }, 1.35);
+    ctx.save();
+    ctx.fillStyle = "#6fe3ff"; ctx.font = "800 11px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText("🚶 Siz", P.fx, P.fy - 30);
+    ctx.restore();
+    // yaqin moshinaga chiqish belgisi
+    const carDist = Math.hypot(P.fx - P.x, P.fy - P.y);
+    if (carDist < 90) {
+      ctx.save();
+      ctx.fillStyle = "#4dff9d"; ctx.font = "800 12px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("[F] minish", P.x, P.y - 55);
+      ctx.beginPath(); ctx.arc(P.x, P.y - 70, 9, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(77,255,157,0.35)"; ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life / p.max);
+    ctx.fillStyle = p.col;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  for (const f of floaters) {
+    ctx.globalAlpha = Math.min(1, f.life);
+    ctx.fillStyle = f.col; ctx.font = "900 16px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(f.txt, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+
+  // pastki qatlam: mashina atrofidagi yorug'lik effekti yo'q, ammo tungi emas — kunduz
+}
+
+/* ---------- ASOSIY TSIKL ---------- */
+let last = performance.now();
+let hudT = 0;
+function loop(now) {
+  let dt = (now - last) / 1000;
+  last = now;
+  if (dt > 0.05) dt = 0.05;
+
+  if (!shopOpen) {
+    if (P.mode === "car") updateCar(dt); else updateFoot(dt);
+    updateTraffic(dt);
+    updatePeds(dt);
+    updateFX(dt);
+    updateCamera(dt);
+
+    if (earnBuf >= 1) {
+      const n = Math.floor(earnBuf);
+      earnBuf -= n;
+      if (n > 0) {
+        save.money += n;
+        if (Math.random() < 0.35) floater(P.x, P.y - 60, "+" + fmt(n), "#ffd83d");
+      }
+    }
+    saveT += dt;
+    if (saveT > 2) { saveT = 0; persist(); }
+  }
+
+  render();
+
+  hudT += dt;
+  if (hudT > 0.12) { hudT = 0; updateHUD(); }
+
+  requestAnimationFrame(loop);
+}
+
+/* ---------- ISHGHA TUSHIRISH ---------- */
+initTraffic();
+initPeds();
+updateHUD();
+persist();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
