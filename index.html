@@ -13,15 +13,18 @@
   .panel { background: rgba(8,10,14,.80); color: #fff; border: 1px solid rgba(255,255,255,.14);
     border-radius: 14px; backdrop-filter: blur(6px); box-shadow: 0 10px 300px rgba(0,0,0,.45); }
 
-  #hud { position: fixed; top: 14px; left: 14px; padding: 12px 16px; min-width: 240px; font-size: 14px; line-height: 1.75; z-index: 5; }
+  #hud { position: fixed; top: 14px; left: 14px; padding: 12px 16px; min-width: 260px; font-size: 14px; line-height: 1.75; z-index: 5; }
   #hud .money { color: #ffd83d; font-size: 24px; font-weight: 800; letter-spacing: .5px; }
   #hud .car { color: #6fe3ff; font-weight: 700; }
+  #hud .weather { margin-top: 6px; font-weight: 700; }
   #hud .muted { color: #9aa4b2; font-size: 12px; }
 
   #speedo { position: fixed; top: 14px; right: 14px; padding: 12px 18px; text-align: right; z-index: 5; }
   #speedo .val { font-size: 42px; font-weight: 900; color: #4dff9d; line-height: 1; text-shadow: 0 0 18px rgba(77,255,157,.5); }
   #speedo .unit { font-size: 13px; color: #9aa4b2; letter-spacing: 3px; }
   #speedo .mode { margin-top: 6px; font-size: 13px; color: #ffd83d; font-weight: 700; }
+  #miniMap { position: fixed; right: 14px; top: 132px; width: 190px; padding: 8px; z-index: 5; }
+  #mapCanvas { width: 172px; height: 126px; display: block; border-radius: 8px; }
 
   #help { position: fixed; left: 14px; bottom: 14px; padding: 10px 14px; font-size: 12.5px; color: #cfd6e0; z-index: 5; line-height: 1.9; }
   #help b { color: #fff; background: rgba(255,255,255,.12); padding: 1px 6px; border-radius: 5px; }
@@ -74,22 +77,29 @@
   <div class="money" id="money">$30,000</div>
   <div>🚗 <span class="car" id="carName">Mercedes-Benz</span></div>
   <div>🛣 Masofa: <span id="dist">0.00</span> km</div>
+  <div class="weather" id="weather">☀️ Quyoshli • <span id="timeTxt">12:00</span></div>
+  <div class="muted">O'yin vaqti • har 1 km = 10 daqiqa</div>
   <div class="muted" id="ownedInfo">Garajda: 1 ta moshina</div>
 </div>
 
 <div id="speedo" class="panel">
   <div class="val" id="kmh">0</div>
-  <div class="unit">KM/S</div>
+  <div class="unit">KM/H</div>
   <div class="mode" id="modeTxt">🟡 MASHINADA</div>
+  <div class="mode" id="cameraTxt">🎥 ORQADAN</div>
 </div>
+
+<div id="miniMap" class="panel"><canvas id="mapCanvas" width="344" height="252" aria-label="Mini-xarita"></canvas></div>
 
 <div id="help" class="panel">
   <b>W/S</b> gaz &nbsp; <b>A/D</b> boshqarish &nbsp; <b>Space</b> tormoz<br>
-  <b>F</b> mashinadan tushish / minish &nbsp; <b>M</b> avto-do'kon
+  <b>F</b> tushish/minish &nbsp; <b>C</b> kamera &nbsp; sichqoncha: aylantirish/masofa<br>
+  <b>M</b> avto-do'kon
 </div>
 
 <div id="buttons">
   <button class="gbtn" id="btnExit">🚶 Tushish (F)</button>
+  <button class="gbtn" id="btnCamera">🎥 Kamera (C)</button>
   <button class="gbtn accent" id="btnShop">🛒 Avto-do'kon (M)</button>
 </div>
 
@@ -112,13 +122,14 @@
 
 <script>
 /* ==========================================================
-   GTA TOSHKENT — 2D top-down shahar o'yini
+  GTA TOSHKENT — 3D third-person shahar haydash o'yini
    Yo'l, binolar, daraxtlar, piyodalar yo'li, piyodalar,
    pul, avto-do'kon (30 ming $ - 200 ming $)
    ========================================================== */
 
 const cv = document.getElementById('game');
 const ctx = cv.getContext('2d');
+let useThreeRenderer = false;
 
 let W = 0, H = 0, zoom = 1;
 function resize() {
@@ -173,11 +184,17 @@ const SHOP_IDS = ["nexia","gentra","lacetti","malibu","camry","c63","m5","range"
 
 /* ---------- SAQLASH ---------- */
 const SAVE_KEY = "gta_tashkent_v1";
-let save = { money: 30000, owned: ["mers"], current: "mers", distance: 0 };
+const PX_PER_KM = 9360;
+let save = { money: 30000, owned: ["mers"], current: "mers", distance: 0, distanceScale: PX_PER_KM };
 try {
   const s = JSON.parse(localStorage.getItem(SAVE_KEY));
   if (s && typeof s.money === "number" && s.owned && s.current && CARS[s.current]) save = s;
   if (save.owned.indexOf("mers") === -1) save.owned.push("mers");
+  if (typeof save.distance !== "number" || !Number.isFinite(save.distance)) save.distance = 0;
+  if (save.distanceScale !== PX_PER_KM) {
+    save.distance *= PX_PER_KM / (save.distanceScale || 8000);
+    save.distanceScale = PX_PER_KM;
+  }
 } catch (e) {}
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 
@@ -199,40 +216,87 @@ window.addEventListener("blur", () => { for (const k in keys) keys[k] = false; }
 const P = { mode: "car", x: 40, y: 0, angle: 0, speed: 0, fx: 185, fy: 0, fa: 0, phase: 0 };
 const cam = { x: 40, y: -60 };
 let shake = 0, hitCd = 0, earnBuf = 0, drivePx = 0, saveT = 0;
-const particles = [], floaters = [];
+const particles = [], floaters = [], rainDrops = [];
 
-/* ---------- DUNYO O'LCHAMLARI ---------- */
-const ROAD = 160;              // asfalt yarmi (jami 320 px kenglikda)
-const SW_L = 160, SW_R = 250;  // piyodalar yo'li
-const TREE_X = 230;            // daraxtlar
-const BLOCK_END = 254;         // binolar boshlanadi
-const CROSS_STEP = 1500;       // zebra (piyodalar o'tish joyi)
-const LANE_N = [40, 120];      // tepaga (shimol) — o'ng tomon
-const LANE_S = [-40, -120];    // pastga (janub) — o'ng tomon
-
-/* ---------- TRAFFIC: O'ZBEK VA BOSHQA DAVLAT MOSHINALARI ---------- */
-const TRAFFIC_TYPES = [
-  { name:"Cobalt",  country:"🇺🇿", colors:["#f5f6f7","#2f3a46","#7d8a99"], type:"sedan", kmh:[55,105] },
-  { name:"Gentra",  country:"🇺🇿", colors:["#ffffff","#d5d8dd","#2b2f36"], type:"sedan", kmh:[55,105] },
-  { name:"Nexia 3", country:"🇺🇿", colors:["#a9b1bb","#3a4048","#8f1f1f"], type:"sedan", kmh:[50,95]  },
-  { name:"Spark",   country:"🇺🇿", colors:["#2856b8","#c0392b","#e8e8ea"], type:"hatch", kmh:[50,90]  },
-  { name:"Damas",   country:"🇺🇿", colors:["#f2f2f2","#cfd3d8"],           type:"van",   kmh:[45,80]  },
-  { name:"Lacetti", country:"🇺🇿", colors:["#7f8fa6","#e6e6e6"],           type:"hatch", kmh:[55,100] },
-  { name:"Malibu 2",country:"🇺🇸", colors:["#0b0c10","#dfe3e8"],           type:"sedan", kmh:[70,120] },
-  { name:"Toyota Camry", country:"🇯🇵", colors:["#15181d","#e9ecef","#3c4650"], type:"sedan", kmh:[75,130] },
-  { name:"Hyundai Sonata", country:"🇰🇷", colors:["#1f2937","#c9ced6"],    type:"sedan", kmh:[75,125] },
-  { name:"BMW X5",  country:"🇩🇪", colors:["#101418","#4a5560"],           type:"suv",   kmh:[80,135] },
-  { name:"Mercedes E", country:"🇩🇪", colors:["#0c0d11","#8d949d"],        type:"sedan", kmh:[80,140] },
-  { name:"Audi A6", country:"🇩🇪", colors:["#232a33","#b9bec6"],           type:"sedan", kmh:[80,135] },
-  { name:"VW Golf", country:"🇩🇪", colors:["#2b2f36","#26519a"],           type:"hatch", kmh:[65,115] },
-  { name:"Taksi (Prius)", country:"🇺🇿🇯🇵", colors:["#f7c948"],            type:"hatch", kmh:[60,105] },
-  { name:"Lada Vesta", country:"🇷🇺", colors:["#d9dde2","#2f4f80"],        type:"sedan", kmh:[60,110] },
-  { name:"Kia K5",  country:"🇰🇷", colors:["#16324f","#e4e7eb"],           type:"sedan", kmh:[75,125] },
-  { name:"Mercedes-AMG C63", country:"🇩🇪", colors:["#0a0a0f"],            type:"sports",kmh:[95,150] },
-  { name:"BMW M5",  country:"🇩🇪", colors:["#15407a"],                     type:"sports",kmh:[95,150] },
-  { name:"Lamborghini", country:"🇮🇹", colors:["#f4d004"],                 type:"super", kmh:[110,170] },
-  { name:"Bugatti", country:"🇫🇷", colors:["#12306e"],                     type:"super", kmh:[110,175] }
+/* ---------- VAQT VA OB-HAVO (har 3 soatda o'zgaradi) ---------- */
+const WEATHERS = [
+  { id:"sun",    name:"☀️ Quyoshli",    tint:null,       rain:false, fog:0.00 },
+  { id:"cloud",  name:"⛅ Bulutli",     tint:"#8ca2b4", rain:false, fog:0.08 },
+  { id:"rain",   name:"🌧 Yomg'irli",    tint:"#5a7690", rain:true,  fog:0.15 },
+  { id:"fog",    name:"🌫 Tumonli",      tint:"#a8b5c0", rain:false, fog:0.55 },
+  { id:"night",  name:"🌙 Tun",          tint:"#0a1a3a", rain:false, fog:0.05 },
+  { id:"storm",  name:"⛈ Bo'ron",        tint:"#3a4a60", rain:true,  fog:0.30 }
 ];
+const gameTime = { hours: 8, speed: 30 };
+let weather = WEATHERS[0];
+let weatherBand = 0;
+function pickNextWeather() {
+  let w;
+  do { w = pick(WEATHERS); } while (w.id === weather.id);
+  weather = w;
+  const wh = document.getElementById("weather");
+  if (wh) wh.childNodes[0].nodeValue = w.name + " • ";
+  if (w.rain) {
+    rainDrops.length = 0;
+    for (let i = 0; i < 280; i++) rainDrops.push({ x:0, y:0, vx:0, vy:0, z:0 });
+  } else {
+    rainDrops.length = 0;
+  }
+  toast("Ob-havo: " + w.name, w.rain ? "bad" : "good");
+}
+
+/* ---------- DUNYO O'LCHAMLARI (KATTA SHAHAR + QOIDA) ---------- */
+const ROAD = 170;              // asfalt yarmi (340 px keng)
+const SW_L = 170, SW_R = 270;  // piyodalar yo'li (kengaytirildi)
+const TREE_X = 250;            // daraxtlar
+const PARK_L = 330, PARK_R = 570; // parkovka zonasi (kengaytirildi)
+const BLOCK_END = 574;         // binolar boshlanadi (parkovkadan keyin)
+const CROSS_STEP = 1100;       // zebra (tez-tez kesishmalar — katta shahar)
+const LANE_N = [28, 85, 142];
+const LANE_S = [-28, -85, -142];
+
+/* ---------- TRAFFIC: O'ZBEK VA BOSHQA DAVLAT MOSHINALARI (KATTA TURKUM) ---------- */
+const TRAFFIC_TYPES = [
+  { name:"Cobalt",  country:"🇺🇿", colors:["#f5f6f7","#2f3a46","#7d8a99"], type:"sedan", kmh:[55,105], weight:12 },
+  { name:"Gentra",  country:"🇺🇿", colors:["#ffffff","#d5d8dd","#2b2f36"], type:"sedan", kmh:[55,105], weight:11 },
+  { name:"Nexia 3", country:"🇺🇿", colors:["#a9b1bb","#3a4048","#8f1f1f"], type:"sedan", kmh:[50,95],  weight:10 },
+  { name:"Spark",   country:"🇺🇿", colors:["#2856b8","#c0392b","#e8e8ea"], type:"hatch", kmh:[50,90],  weight:9  },
+  { name:"Damas",   country:"🇺🇿", colors:["#f2f2f2","#cfd3d8"],           type:"van",   kmh:[45,80],  weight:8  },
+  { name:"Lacetti", country:"🇺🇿", colors:["#7f8fa6","#e6e6e6"],           type:"hatch", kmh:[55,100], weight:9  },
+  { name:"Malibu 2",country:"🇺🇸", colors:["#0b0c10","#dfe3e8"],           type:"sedan", kmh:[70,120], weight:7  },
+  { name:"Toyota Camry", country:"🇯🇵", colors:["#15181d","#e9ecef","#3c4650"], type:"sedan", kmh:[75,130], weight:7 },
+  { name:"Hyundai Sonata", country:"🇰🇷", colors:["#1f2937","#c9ced6"],    type:"sedan", kmh:[75,125], weight:6  },
+  { name:"BMW X5",  country:"🇩🇪", colors:["#101418","#4a5560"],           type:"suv",   kmh:[80,135], weight:5  },
+  { name:"Mercedes E", country:"🇩🇪", colors:["#0c0d11","#8d949d"],        type:"sedan", kmh:[80,140], weight:4  },
+  { name:"Audi A6", country:"🇩🇪", colors:["#232a33","#b9bec6"],           type:"sedan", kmh:[80,135], weight:4  },
+  { name:"VW Golf", country:"🇩🇪", colors:["#2b2f36","#26519a"],           type:"hatch", kmh:[65,115], weight:5  },
+  { name:"Taksi (Prius)", country:"🇺🇿🇯🇵", colors:["#f7c948"],            type:"taxi",  kmh:[60,105], weight:8  },
+  { name:"Lada Vesta", country:"🇷🇺", colors:["#d9dde2","#2f4f80"],        type:"sedan", kmh:[60,110], weight:4  },
+  { name:"Kia K5",  country:"🇰🇷", colors:["#16324f","#e4e7eb"],           type:"sedan", kmh:[75,125], weight:5  },
+  { name:"Mercedes-AMG C63", country:"🇩🇪", colors:["#0a0a0f"],            type:"sports",kmh:[95,150], weight:2  },
+  { name:"BMW M5",  country:"🇩🇪", colors:["#15407a"],                     type:"sports",kmh:[95,150], weight:2  },
+  { name:"Lamborghini", country:"🇮🇹", colors:["#f4d004"],                 type:"super", kmh:[110,170],weight:1  },
+  { name:"Bugatti", country:"🇫🇷", colors:["#12306e"],                     type:"super", kmh:[110,175],weight:1  },
+  { name:"Ford Ranger", country:"🇺🇸", colors:["#1f3a5f","#b91c1c","#f0efe6"], type:"pickup", kmh:[70,130], weight:5 },
+  { name:"Isuzu Truck", country:"🇯🇵", colors:["#2a5d9a","#e4e1d3"],       type:"truck", kmh:[50,85],  weight:3  },
+  { name:"Scania Bus", country:"🇸🇪", colors:["#f1f3f5","#1b7a3a"],        type:"bus",   kmh:[55,95],  weight:2  },
+  { name:"DAEWOO Matiz", country:"🇺🇿🇰🇷", colors:["#e10600","#ffffff","#222222"], type:"hatch", kmh:[45,85], weight:5 },
+  { name:"Toyota Prado", country:"🇯🇵", colors:["#2c3e50","#bfbfbf"],      type:"suv",   kmh:[70,130], weight:5  },
+  { name:"Hyundai Tucson", country:"🇰🇷", colors:["#2d3436","#e17055","#dfe6e9"], type:"suv", kmh:[65,120], weight:5 },
+  { name:"Police Skoda", country:"🇺🇿", colors:["#e8ebef"],                type:"police",kmh:[80,150], weight:3  },
+  { name:"Renault Logan", country:"🇫🇷🇺🇿", colors:["#8395a7","#c8d6e5","#ee5253"], type:"sedan", kmh:[55,105], weight:7 },
+  { name:"KamAZ",   country:"🇷🇺", colors:["#113c89","#d7401c"],           type:"truck", kmh:[45,80],  weight:2  },
+  { name:"SamAuto Bus", country:"🇺🇿", colors:["#ffcb05","#0275d8"],       type:"bus",   kmh:[50,90],  weight:2  },
+  { name:"Chevrolet Orlando", country:"🇺🇸🇺🇿", colors:["#222f3e","#d1d8e0"], type:"suv", kmh:[60,115], weight:4 },
+  { name:"Subaru Forester", country:"🇯🇵", colors:["#1f7a8c","#f9f9f9"],   type:"suv",   kmh:[65,120], weight:3  },
+  { name:"Haval H6", country:"🇨🇳", colors:["#222f3e","#ee5253","#f6f6f6"], type:"suv",  kmh:[65,125], weight:4  }
+];
+function pickWeighted() {
+  let sum = 0; for (const t of TRAFFIC_TYPES) sum += t.weight || 1;
+  let r = Math.random() * sum;
+  for (const t of TRAFFIC_TYPES) { r -= (t.weight || 1); if (r <= 0) return t; }
+  return TRAFFIC_TYPES[0];
+}
 function makePlate() {
   const L = "ABVKMEROPTACHH";
   const r = () => Math.floor(Math.random() * 10);
@@ -240,59 +304,102 @@ function makePlate() {
   return "01 " + a() + " " + r() + r() + r() + " " + a() + a();
 }
 const traffic = [];
-function laneFor(dir) { return dir === -1 ? LANE_N[Math.random() < 0.5 ? 0 : 1]
-                                          : LANE_S[Math.random() < 0.5 ? 0 : 1]; }
+function laneFor(dir) {
+  const arr = (dir === -1 ? LANE_N : LANE_S);
+  return arr[Math.floor(Math.random() * arr.length)];
+}
 function fillTraffic(c) {
-  const t = pick(TRAFFIC_TYPES);
+  const t = pickWeighted();
   c.type = t.type; c.color = pick(t.colors); c.name = t.name; c.country = t.country;
   c.kmh = t.kmh[0] + Math.random() * (t.kmh[1] - t.kmh[0]);
   c.speed = c.kmh * 2.6;
   c.plate = makePlate();
   c.stopT = 0; c.exited = false;
+  c.turnT = 0; c.turnCd = 3 + Math.random() * 8;
+  c.laneT = 1 + Math.random() * 6;
+  c.turnTarget = undefined;
+  c.wantsTurn = Math.random() < 0.12;
+  c.turnRoute = null;
+  c.routeSide = 0;
+  c.turnProgress = 0;
+  c.angle = c.dir === -1 ? 0 : Math.PI;
+  c.brake = false;
   return c;
 }
-function placeTraffic(c, side) {           // side: -1 tepadan, +1 pastdan
+function placeTraffic(c, side) {
   fillTraffic(c);
   c.dir = side;
+  c.angle = side === -1 ? 0 : Math.PI;
   const vh = H / zoom;
-  c.y = cam.y + side * (vh / 2 + 300 + Math.random() * 950);
-  c.x = laneFor(c.dir);
+  c.y = cam.y - side * (vh / 2 + 300 + Math.random() * 1200);
+  c.x = c.wantsTurn ? (c.dir === -1 ? LANE_N[LANE_N.length - 1] : LANE_S[LANE_S.length - 1]) : laneFor(c.dir);
 }
 function initTraffic() {
   traffic.length = 0;
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 22; i++) {
     const c = {};
     placeTraffic(c, Math.random() < 0.5 ? -1 : 1);
     traffic.push(c);
   }
 }
 
-/* ---------- PIYODALAR (NPC — piyodalar yo'liida yuradi) ---------- */
-const PED_TOPS = ["#e74c3c","#3498db","#f1c40f","#9b59b6","#1abc9c","#e67e22","#ecf0f1","#2ecc71","#34495e","#e84393"];
-const PED_PANTS = ["#2c3e50","#1f2a37","#4a4a52","#6b4f2a","#22303f"];
+/* ---------- PARKOVKA ZONASI (kengroq, alohida joy) ---------- */
+const parked = [];
+function initParked() {
+  parked.length = 0;
+  const SEG = 310;
+  const range = 24;
+  for (let i = -range; i <= range; i++) {
+    for (const side of [-1, 1]) {
+      if (Math.random() < 0.62) {
+        const t = pickWeighted();
+        const px0 = side * (PARK_L + 12);
+        parked.push({
+          x: px0 + side * Math.random() * (PARK_R - PARK_L - 140),
+          y: i * SEG + 25 + Math.random() * (SEG - 80),
+          angle: side > 0 ? Math.PI : 0,
+          color: pick(t.colors),
+          type: t.type,
+          plate: makePlate(),
+          parked: true
+        });
+      }
+    }
+  }
+}
+
+/* ---------- PIYODALAR (koproq — 35 ta, SW hududi kengroq) ---------- */
+const PED_TOPS = ["#e74c3c","#3498db","#f1c40f","#9b59b6","#1abc9c","#e67e22","#ecf0f1","#2ecc71","#34495e","#e84393","#fd79a8","#0984e3","#55efc4","#fab1a0","#6c5ce7"];
+const PED_PANTS = ["#2c3e50","#1f2a37","#4a4a52","#6b4f2a","#22303f","#38ada9","#7f8c8d","#8e44ad"];
 const peds = [];
+const PED_MODES = ["walk","stand","phone","talk","walk","walk"];
 function newPed(p) {
   p = p || {};
   p.side = Math.random() < 0.5 ? -1 : 1;
-  p.xTarget = p.side * (172 + Math.random() * 26);
+  p.xTarget = p.side * (175 + Math.random() * 90);
   p.x = p.xTarget;
   p.dir = Math.random() < 0.5 ? -1 : 1;
-  p.speed = 22 + Math.random() * 30;
+  p.speed = 22 + Math.random() * 32;
   p.phase = Math.random() * 10;
   p.shirt = pick(PED_TOPS);
   p.pants = pick(PED_PANTS);
-  p.skin = pick(["#f0c8a0","#e0ac7e","#c68863","#8d5524","#f7d7a8"]);
-  p.hair = pick(["#1c1c1c","#3b2314","#5a3a1a","#111111"]);
-  p.mode = "walk";
-  p.crossCd = 3 + Math.random() * 8;
+  p.skin = pick(["#f0c8a0","#e0ac7e","#c68863","#8d5524","#f7d7a8","#d9a066"]);
+  p.hair = pick(["#1c1c1c","#3b2314","#5a3a1a","#111111","#8d6e63","#ffd89b"]);
+  p.mode = pick(PED_MODES);
+  p.modeT = 1 + Math.random() * 5;
+  p.crossCd = 8 + Math.random() * 15;
+  p.crossTarget = null;
+  p.friend = null;
+  p.helloT = 0;
+  p.enterCd = 8 + Math.random() * 18;
   return p;
 }
 function initPeds() {
   peds.length = 0;
   const vh = H / zoom;
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 35; i++) {
     const p = newPed({});
-    p.y = cam.y + (Math.random() - 0.5) * (vh + 1600);
+    p.y = cam.y + (Math.random() - 0.5) * (vh + 2200);
     peds.push(p);
   }
 }
@@ -307,93 +414,316 @@ function spawnPedFromCar(car) {
   peds.push(p);
 }
 
-/* ---------- MOSHINA SPRITI (GTA uslubida) ---------- */
-const DIMS = { sedan:{l:86,w:40}, hatch:{l:74,w:38}, suv:{l:94,w:47}, van:{l:98,w:44}, sports:{l:92,w:47}, super:{l:100,w:51} };
+/* ---------- MOSHINA SPRITI (MURAKKAB DIZAYN — virtual hayot uslubida) ---------- */
+const DIMS = { sedan:{l:86,w:40}, hatch:{l:74,w:38}, suv:{l:94,w:47}, van:{l:98,w:44}, sports:{l:92,w:47}, super:{l:100,w:51}, pickup:{l:96,w:46}, truck:{l:120,w:54}, bus:{l:130,w:52}, taxi:{l:86,w:40}, police:{l:90,w:42} };
 function drawCar(c, o) {
   const d = DIMS[o.type] || DIMS.sedan;
-  const L = d.l, Wd = d.w;
+  let L = d.l, Wd = d.w;
   const col = o.color;
   const sporty = (o.type === "sports" || o.type === "super");
+  const boxy = (o.type === "van" || o.type === "truck" || o.type === "bus");
+  const lifted = (o.type === "suv" || o.type === "pickup" || o.type === "truck");
   c.save();
   c.translate(o.x, o.y);
   c.rotate(o.angle || 0);
 
-  c.fillStyle = "rgba(0,0,0,0.30)";
-  rr(c, -Wd/2 + 6, -L/2 + 9, Wd, L, 12); c.fill();
+  c.fillStyle = "rgba(0,0,0,0.32)";
+  rr(c, -Wd/2 + 7, -L/2 + 11, Wd, L, 13); c.fill();
 
-  c.fillStyle = "#0c0c0e";
-  rr(c, -Wd/2 - 3, -L/2 + 13, 8, 18, 3); c.fill();
-  rr(c, Wd/2 - 5, -L/2 + 13, 8, 18, 3); c.fill();
-  rr(c, -Wd/2 - 3, L/2 - 31, 8, 18, 3); c.fill();
-  rr(c, Wd/2 - 5, L/2 - 31, 8, 18, 3); c.fill();
+  if (lifted) { L += 4; Wd += 2; }
 
-  const g = c.createLinearGradient(-Wd/2, 0, Wd/2, 0);
-  g.addColorStop(0, shade(col, 0.70));
-  g.addColorStop(0.35, col);
-  g.addColorStop(0.75, shade(col, 1.15));
-  g.addColorStop(1, shade(col, 0.66));
+  c.fillStyle = "#0a0a0c";
+  rr(c, -Wd/2 - 4, -L/2 + 12, 9, 20, 3); c.fill();
+  rr(c, Wd/2 - 5, -L/2 + 12, 9, 20, 3); c.fill();
+  rr(c, -Wd/2 - 4, L/2 - 34, 9, 22, 3); c.fill();
+  rr(c, Wd/2 - 5, L/2 - 34, 9, 22, 3); c.fill();
+  c.fillStyle = "#3a3d42";
+  rr(c, -Wd/2 - 2, -L/2 + 15, 5, 14, 2); c.fill();
+  rr(c, Wd/2 - 3, -L/2 + 15, 5, 14, 2); c.fill();
+  rr(c, -Wd/2 - 2, L/2 - 29, 5, 14, 2); c.fill();
+  rr(c, Wd/2 - 3, L/2 - 29, 5, 14, 2); c.fill();
+
+  const g = c.createLinearGradient(-Wd/2, -L/2, Wd/2, L/2);
+  g.addColorStop(0, shade(col, 0.68));
+  g.addColorStop(0.15, shade(col, 1.12));
+  g.addColorStop(0.45, col);
+  g.addColorStop(0.7, shade(col, 0.92));
+  g.addColorStop(1, shade(col, 0.60));
   c.fillStyle = g;
-  rr(c, -Wd/2, -L/2, Wd, L, sporty ? 9 : 11); c.fill();
+  rr(c, -Wd/2, -L/2, Wd, L, (boxy ? 5 : (sporty ? 8 : 10))); c.fill();
 
-  c.fillStyle = "rgba(255,255,255,0.10)";
-  rr(c, -Wd/2 + 5, -L/2 + 4, Wd - 10, 15, 6); c.fill();
+  c.fillStyle = "rgba(255,255,255,0.12)";
+  rr(c, -Wd/2 + 4, -L/2 + 3, Wd - 8, 12, 5); c.fill();
+  c.strokeStyle = shade(col, 1.25); c.lineWidth = 1.5;
+  c.beginPath(); c.moveTo(-Wd/2 + 4, -L/2 + 17); c.lineTo(Wd/2 - 4, -L/2 + 17); c.stroke();
 
-  c.fillStyle = "#151c25";
-  rr(c, -Wd/2 + 6, -L/2 + 21, Wd - 12, 12, 4); c.fill();
-  c.fillStyle = shade(col, 0.88);
-  rr(c, -Wd/2 + 5, -L/2 + 32, Wd - 10, L * 0.30, 5); c.fill();
-  c.fillStyle = "#151c25";
-  rr(c, -Wd/2 + 6, -L/2 + 32 + L * 0.30, Wd - 12, 11, 4); c.fill();
+  if (sporty) {
+    c.fillStyle = "#0a0a0e";
+    rr(c, -Wd/2 + 8, -L/2 + 1, Wd - 16, 6, 2); c.fill();
+    c.fillStyle = "rgba(255,255,255,0.16)";
+    c.fillRect(-2, -L/2 + 1, 4, L - 2);
+  }
+  if (o.type === "super") {
+    c.fillStyle = "#0d0f14"; rr(c, -Wd/2 - 2, L/2 - 15, Wd + 4, 10, 3); c.fill();
+    c.fillStyle = shade(col, 0.8);
+    rr(c, -Wd/2 + 12, L/2 - 6, Wd - 24, 4, 2); c.fill();
+  }
+  if (o.type === "suv" || o.type === "pickup") {
+    c.strokeStyle = shade(col, 0.55); c.lineWidth = 2;
+    rr(c, -Wd/2 - 1, -L/2 + 10, Wd + 2, L - 20, 10); c.stroke();
+    c.fillStyle = "#1a1d22";
+    rr(c, -Wd/2 + 6, -L/2 - 3, Wd - 12, 6, 3); c.fill();
+  }
+  if (o.type === "truck") {
+    c.fillStyle = shade(col, 0.55);
+    rr(c, -Wd/2, -L/2, Wd, L * 0.42, 6); c.fill();
+    c.fillStyle = "rgba(255,255,255,0.15)";
+    rr(c, -Wd/2 + 8, L * 0.1, Wd - 16, L * 0.22, 4); c.fill();
+  }
+  if (o.type === "bus") {
+    c.fillStyle = "rgba(255,255,255,0.16)";
+    for (let wy = -L/2 + 22; wy < L/2 - 30; wy += 24) {
+      rr(c, -Wd/2 + 10, wy, Wd - 20, 14, 3); c.fill();
+    }
+  }
+  if (o.type === "police") {
+    const blink = (Math.floor(performance.now() * 0.012) % 2 === 0);
+    c.fillStyle = blink ? "#ff2b2b" : "#2b6bff";
+    rr(c, -10, -L/2 - 4, 20, 5, 2); c.fill();
+    c.fillStyle = "rgba(255,255,255,0.35)";
+    if (blink) { c.fillRect(-Wd/2, -L/2 - 2, Wd, 2); }
+  }
+  if (o.type === "taxi") {
+    c.fillStyle = "#f6c33a";
+    rr(c, -Wd/2 + 10, -L/2 + 22, Wd - 20, 12, 4); c.fill();
+    c.fillStyle = "#1a1a1a";
+    c.font = "700 7px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillText("TAXI", 0, -L/2 + 28);
+  }
+  if (o.type === "pickup") {
+    c.fillStyle = shade(col, 0.5);
+    rr(c, -Wd/2 + 2, -L/2 + L * 0.48, Wd - 4, L * 0.42, 4); c.fill();
+    c.strokeStyle = shade(col, 0.3); c.lineWidth = 2;
+    rr(c, -Wd/2 + 6, -L/2 + L * 0.52, Wd - 12, L * 0.34, 3); c.stroke();
+  }
 
-  if (sporty) { c.fillStyle = "rgba(255,255,255,0.18)"; c.fillRect(-3, -L/2 + 2, 6, L - 4); }
-  if (o.type === "super") { c.fillStyle = "#101216"; rr(c, -Wd/2 - 2, L/2 - 13, Wd + 4, 8, 3); c.fill(); }
+  const wGlass = Wd - 14;
+  c.fillStyle = "#0e141b";
+  rr(c, -wGlass/2, -L/2 + 20, wGlass, 14, (boxy ? 3 : 4)); c.fill();
+  c.fillStyle = shade(col, 0.9);
+  rr(c, -wGlass/2 + 1, -L/2 + 33, wGlass - 2, L * 0.32, 5); c.fill();
+  c.fillStyle = "rgba(120,180,220,0.22)";
+  rr(c, -wGlass/2 + 1, -L/2 + 33, wGlass - 2, L * 0.32, 5); c.fill();
+  c.fillStyle = "#0e141b";
+  rr(c, -wGlass/2, -L/2 + 33 + L * 0.32, wGlass, 13, (boxy ? 3 : 4)); c.fill();
+  c.strokeStyle = "#0a0d11"; c.lineWidth = 1.2;
+  c.beginPath(); c.moveTo(0, -L/2 + 20); c.lineTo(0, -L/2 + 33 + L * 0.32 + 13); c.stroke();
 
-  c.fillStyle = "#fff6c7";
-  rr(c, -Wd/2 + 4, -L/2 + 2, 11, 7, 3); c.fill();
-  rr(c, Wd/2 - 15, -L/2 + 2, 11, 7, 3); c.fill();
+  // HAYDOVCHI VA YO'LOVCHILAR (moshina ichidagi odamlar)
+  const skinColors = ["#f0c8a0","#e0ac7e","#c68863","#8d5524","#f7d7a8","#d9a066","#c49a6c"];
+  const hdSkin = skinColors[Math.floor((o.x + o.y) * 0.3) % skinColors.length];
+  const hairColors = ["#1c1c1c","#3b2314","#5a3a1a","#111111","#8d6e63","#6b4423","#a67c52"];
+  const hdHair = hairColors[Math.floor((o.x * 1.3 + o.y) * 0.5) % hairColors.length];
+  const shirtColors = ["#e74c3c","#3498db","#f1c40f","#9b59b6","#1abc9c","#e67e22","#ecf0f1","#2ecc71","#34495e","#e84393"];
+  const hdShirt = shirtColors[Math.floor((o.x * 0.7 + o.y * 1.1)) % shirtColors.length];
 
-  c.fillStyle = o.brake ? "#ff2d2d" : "#c62828";
-  rr(c, -Wd/2 + 4, L/2 - 9, 12, 7, 3); c.fill();
-  rr(c, Wd/2 - 16, L/2 - 9, 12, 7, 3); c.fill();
+  if (o.type !== "truck" && o.type !== "bus") {
+    c.save();
+    c.globalAlpha = 0.78;
+    // Old oynada ikki kishi: pasijger (chap) + haydovchi (o'ng)
+    // HAYDOVCHI: o'ng old oyna (o'ng tomonda)
+    if (o.type !== "van" || true) {
+      const headY = -L/2 + 38;
+      // Haydovchi tanasi (kichik bel)
+      c.fillStyle = hdShirt;
+      rr(c, wGlass/2 - 12, headY + 2, 10, 10, 2); c.fill();
+      // Haydovchi boshi
+      c.fillStyle = hdSkin;
+      c.beginPath(); c.arc(wGlass/2 - 7.5, headY - 1, 4.6, 0, Math.PI * 2); c.fill();
+      c.fillStyle = hdHair;
+      c.beginPath(); c.arc(wGlass/2 - 7.5, headY - 3, 4.4, Math.PI, Math.PI * 2); c.fill();
+      // Haydovchi ko'zlari (bir nuqta)
+      c.fillStyle = "#222";
+      c.fillRect(wGlass/2 - 9.5, headY - 1.5, 1.2, 1.2);
+      c.fillRect(wGlass/2 - 6.5, headY - 1.5, 1.2, 1.2);
+
+      // Pasijger (chap old)
+      if (o.type !== "sports" || Math.random() < 1) {
+        c.fillStyle = shirtColors[Math.floor((o.x*0.9 + o.y*1.4)) % shirtColors.length];
+        rr(c, -wGlass/2 + 2, headY + 2, 10, 10, 2); c.fill();
+        c.fillStyle = skinColors[Math.floor((o.x*1.7+o.y)) % skinColors.length];
+        c.beginPath(); c.arc(-wGlass/2 + 7.5, headY - 1, 4.6, 0, Math.PI * 2); c.fill();
+        c.fillStyle = hairColors[Math.floor((o.x*0.6+o.y*1.2)) % hairColors.length];
+        c.beginPath(); c.arc(-wGlass/2 + 7.5, headY - 3, 4.4, Math.PI, Math.PI * 2); c.fill();
+        c.fillStyle = "#222";
+        c.fillRect(-wGlass/2 + 5.5, headY - 1.5, 1.2, 1.2);
+        c.fillRect(-wGlass/2 + 8.5, headY - 1.5, 1.2, 1.2);
+      }
+    }
+
+    // Orqa oynada 1-2 kishi (sedan, suv, taxi, police, hatch, pickup)
+    if (o.type === "sedan" || o.type === "suv" || o.type === "taxi" || o.type === "police" || o.type === "hatch" || o.type === "pickup") {
+      const ry = -L/2 + 33 + L * 0.32 - 5;
+      const rs = skinColors[Math.floor((o.x*2.3 + o.y*0.8)) % skinColors.length];
+      c.fillStyle = shirtColors[Math.floor((o.x*0.4 + o.y*1.9)) % shirtColors.length];
+      rr(c, -6, ry + 3, 12, 9, 2); c.fill();
+      c.fillStyle = rs;
+      c.beginPath(); c.arc(0, ry, 4.6, 0, Math.PI * 2); c.fill();
+      c.fillStyle = hairColors[Math.floor((o.x*0.2 + o.y*0.6)) % hairColors.length];
+      c.beginPath(); c.arc(0, ry - 2, 4.4, Math.PI, Math.PI * 2); c.fill();
+      if (o.type === "suv" || o.type === "sedan") {
+        // Yana bir kishi orqada (yakka)
+        const rs2 = skinColors[(Math.floor(o.x*3+o.y*2)) % skinColors.length];
+        c.fillStyle = shirtColors[Math.floor((o.x*1.6+o.y*0.3)) % shirtColors.length];
+        rr(c, wGlass/2 - 12, ry + 3, 10, 9, 2); c.fill();
+        c.fillStyle = rs2;
+        c.beginPath(); c.arc(wGlass/2 - 7, ry, 4.3, 0, Math.PI * 2); c.fill();
+        c.fillStyle = hairColors[Math.floor(o.x*1.1+o.y*0.5) % hairColors.length];
+        c.beginPath(); c.arc(wGlass/2 - 7, ry - 2, 4.1, Math.PI, Math.PI * 2); c.fill();
+      }
+    }
+    c.restore();
+  } else if (o.type === "bus") {
+    // Avtobusda: yon tomonda barcha derazalardan keyin turli xil odamlar
+    c.save(); c.globalAlpha = 0.72;
+    let widx = 0;
+    for (let wy = -L/2 + 24; wy < L/2 - 32; wy += 24) {
+      widx++;
+      const seed = o.x * 0.3 + wy * 0.7 + widx;
+      if (Math.floor(seed) % 3 !== 0) {
+        const sk = skinColors[Math.floor(Math.abs(seed)) % skinColors.length];
+        const sh = shirtColors[Math.floor(Math.abs(seed*1.7)) % shirtColors.length];
+        c.fillStyle = sh;
+        rr(c, -Wd/2 + 14, wy + 3, 10, 9, 2); c.fill();
+        rr(c, Wd/2 - 24, wy + 3, 10, 9, 2); c.fill();
+        c.fillStyle = sk;
+        c.beginPath(); c.arc(-Wd/2 + 19, wy, 4.3, 0, Math.PI * 2); c.fill();
+        c.beginPath(); c.arc(Wd/2 - 19, wy, 4.3, 0, Math.PI * 2); c.fill();
+      }
+    }
+    c.restore();
+  } else if (o.type === "truck") {
+    // Yuk mashinasi: 1 ta haydovchi (old oyna, o'ng)
+    c.save(); c.globalAlpha = 0.78;
+    const ty = -L/2 + L*0.18;
+    c.fillStyle = hdShirt; rr(c, wGlass/2 - 13, ty + 4, 11, 11, 2); c.fill();
+    c.fillStyle = hdSkin; c.beginPath(); c.arc(wGlass/2 - 7.5, ty, 4.8, 0, Math.PI * 2); c.fill();
+    c.fillStyle = hdHair; c.beginPath(); c.arc(wGlass/2 - 7.5, ty - 2.2, 4.6, Math.PI, Math.PI * 2); c.fill();
+    // Pasijger
+    const sk2 = skinColors[Math.floor(o.x*2.1+o.y) % skinColors.length];
+    c.fillStyle = shirtColors[Math.floor(o.x*1.3+o.y*1.1) % shirtColors.length];
+    rr(c, -wGlass/2 + 2, ty + 4, 11, 11, 2); c.fill();
+    c.fillStyle = sk2; c.beginPath(); c.arc(-wGlass/2 + 7.5, ty, 4.8, 0, Math.PI * 2); c.fill();
+    c.fillStyle = hairColors[Math.floor(o.x*0.7+o.y*1.5) % hairColors.length];
+    c.beginPath(); c.arc(-wGlass/2 + 7.5, ty - 2.2, 4.6, Math.PI, Math.PI * 2); c.fill();
+    c.restore();
+  }
+
+  c.fillStyle = "#fff8cb";
+  rr(c, -Wd/2 + 3, -L/2 + 2, 12, 8, 3); c.fill();
+  rr(c, Wd/2 - 15, -L/2 + 2, 12, 8, 3); c.fill();
+  c.fillStyle = "#e0e0cc";
+  rr(c, -Wd/2 + 5, -L/2 + 4, 2, 4, 1); c.fill();
+  rr(c, Wd/2 - 7, -L/2 + 4, 2, 4, 1); c.fill();
+
+  c.fillStyle = o.brake ? "#ff2b2b" : "#c02626";
+  rr(c, -Wd/2 + 3, L/2 - 10, 13, 8, 3); c.fill();
+  rr(c, Wd/2 - 16, L/2 - 10, 13, 8, 3); c.fill();
+  if (o.brake) {
+    c.fillStyle = "rgba(255,43,43,0.22)";
+    rr(c, -Wd/2 + 3, L/2, 13, 22, 6); c.fill();
+    rr(c, Wd/2 - 16, L/2, 13, 22, 6); c.fill();
+  }
+
+  if (sporty || o.type === "sedan" || o.type === "hatch") {
+    c.fillStyle = "#e82127";
+    c.beginPath(); c.arc(0, L/2 - 6, 3, 0, Math.PI * 2); c.fill();
+  }
 
   c.fillStyle = "rgba(0,0,0,0.55)";
-  rr(c, -Wd/2 + 12, -L/2 + 1, Wd - 24, 5, 2); c.fill();
+  rr(c, -Wd/2 + 14, -L/2 + 1, Wd - 28, 5, 2); c.fill();
+  c.fillStyle = shade(col, 0.65);
+  rr(c, -Wd/2 + 10, L/2 - 3, Wd - 20, 4, 2); c.fill();
 
-  c.fillStyle = shade(col, 0.72);
-  c.fillRect(-Wd/2 - 4, -L/2 + 31, 5, 8);
-  c.fillRect(Wd/2 - 1, -L/2 + 31, 5, 8);
+  c.fillStyle = shade(col, 0.78);
+  c.fillRect(-Wd/2 - 4, -L/2 + 30, 6, 9);
+  c.fillRect(Wd/2 - 2, -L/2 + 30, 6, 9);
+  c.fillRect(-Wd/2 - 4, L/2 - 40, 6, 9);
+  c.fillRect(Wd/2 - 2, L/2 - 40, 6, 9);
 
   if (o.plate) {
-    c.fillStyle = "#f5f5f0";
-    rr(c, -13, L/2 - 9, 26, 8, 2); c.fill();
-    c.fillStyle = "#111";
-    c.font = "700 6px monospace";
+    c.fillStyle = "#f5f5ee";
+    rr(c, -15, L/2 - 10, 30, 9, 2); c.fill();
+    c.strokeStyle = "#c8c0a0"; c.lineWidth = 1;
+    rr(c, -15, L/2 - 10, 30, 9, 2); c.stroke();
+    c.fillStyle = "#0d0d0d";
+    c.font = "800 6.5px monospace";
     c.textAlign = "center"; c.textBaseline = "middle";
-    c.fillText(o.plate, 0, L/2 - 4.5);
+    c.fillText(o.plate, 0, L/2 - 5.5);
   }
   c.restore();
 }
 
-/* ---------- PIYODA SPRITI ---------- */
-function drawPerson(c, x, y, ang, phase, p, scale) {
+/* ---------- PIYODA SPRITI (turgancha yuradigan ko'rinish) ---------- */
+function drawPerson(c, x, y, ang, phase, p, scale, mode) {
   scale = scale || 1;
+  mode = mode || "walk";
   c.fillStyle = "rgba(0,0,0,0.28)";
-  c.beginPath(); c.ellipse(x + 4, y + 6, 11 * scale, 8 * scale, 0, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.ellipse(x + 3, y + 11, 10 * scale, 7 * scale, 0, 0, Math.PI * 2); c.fill();
   c.save();
   c.translate(x, y); c.rotate(ang); c.scale(scale, scale);
-  const sw = Math.sin(phase) * 5;
+  const moving = (mode === "walk" || mode === "exit" || mode === "cross");
+  const step = moving ? Math.sin(phase) * 4.2 : 0;
+  const swL = step, swR = -step;
+
+  c.fillStyle = "#0a0a0c";
+  c.beginPath(); c.ellipse(-3 + swL * 0.3, 15, 3.2, 1.8, 0, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.ellipse(3 + swR * 0.3, 15, 3.2, 1.8, 0, 0, Math.PI * 2); c.fill();
+
   c.strokeStyle = p.pants; c.lineWidth = 5; c.lineCap = "round";
-  c.beginPath(); c.moveTo(-3, 3); c.lineTo(-3 + sw * 0.5, 12 + Math.max(0, sw)); c.stroke();
-  c.beginPath(); c.moveTo(3, 3);  c.lineTo(3 - sw * 0.5, 12 + Math.max(0, -sw)); c.stroke();
-  c.strokeStyle = p.shirt; c.lineWidth = 4;
-  c.beginPath(); c.moveTo(-7, -4); c.lineTo(-8 - sw * 0.4, 5); c.stroke();
-  c.beginPath(); c.moveTo(7, -4);  c.lineTo(8 + sw * 0.4, 5); c.stroke();
+  c.beginPath(); c.moveTo(-3, 4); c.lineTo(-3 + swL * 0.5, 14 + Math.max(0, swL) * 0.4); c.stroke();
+  c.beginPath(); c.moveTo(3, 4);  c.lineTo(3 + swR * 0.5, 14 + Math.max(0, -swR) * 0.4); c.stroke();
+
   c.fillStyle = p.shirt;
-  rr(c, -7, -8, 14, 15, 5); c.fill();
+  rr(c, -7, -8, 14, 13, 4); c.fill();
+  c.fillStyle = shade(p.shirt, 0.88);
+  c.fillRect(-7, 3, 14, 2);
+
+  const armSwing = moving ? Math.sin(phase + Math.PI) * 3 : 0;
+  if (mode === "phone") {
+    c.strokeStyle = p.shirt; c.lineWidth = 4;
+    c.beginPath(); c.moveTo(-7, -4); c.lineTo(-9 + armSwing, 5); c.stroke();
+    c.beginPath(); c.moveTo(7, -4); c.lineTo(5, -11); c.stroke();
+    c.fillStyle = p.skin;
+    c.beginPath(); c.arc(5, -12, 2.3, 0, Math.PI * 2); c.fill();
+    c.fillStyle = "#6fe3ff";
+    c.fillRect(2.5, -16, 5, 6);
+    c.strokeStyle = "#111"; c.lineWidth = 1;
+    c.strokeRect(2.5, -16, 5, 6);
+  } else if (mode === "talk") {
+    c.strokeStyle = p.shirt; c.lineWidth = 4;
+    c.beginPath(); c.moveTo(-7, -4); c.lineTo(-10, 3); c.stroke();
+    c.beginPath(); c.moveTo(7, -4); c.lineTo(10, 3); c.stroke();
+    c.fillStyle = "rgba(255,255,255,0.92)";
+    c.font = "700 8px sans-serif"; c.textAlign = "center";
+    c.fillText("💬", 0, -24);
+  } else if (mode === "stand") {
+    c.strokeStyle = p.shirt; c.lineWidth = 4;
+    c.beginPath(); c.moveTo(-7, -4); c.lineTo(-8, 6); c.stroke();
+    c.beginPath(); c.moveTo(7, -4); c.lineTo(8, 6); c.stroke();
+  } else {
+    c.strokeStyle = p.shirt; c.lineWidth = 4;
+    c.beginPath(); c.moveTo(-7, -4); c.lineTo(-8 + armSwing, 5); c.stroke();
+    c.beginPath(); c.moveTo(7, -4);  c.lineTo(8 - armSwing, 5); c.stroke();
+  }
+
   c.fillStyle = p.skin;
   c.beginPath(); c.arc(0, -13, 6, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#b6865d";
+  ctx.beginPath(); ctx.arc(-3.2, -12, 0.9, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(3.2, -12, 0.9, 0, Math.PI * 2); ctx.fill();
   c.fillStyle = p.hair;
-  c.beginPath(); c.arc(0, -14, 6, Math.PI, Math.PI * 2); c.fill();
+  c.beginPath(); c.arc(0, -14, 6.3, Math.PI * 0.9, Math.PI * 2.1); c.fill();
   c.restore();
 }
 
@@ -411,21 +741,58 @@ function drawTree(x, y) {
   ctx.beginPath(); ctx.arc(x - 12, y - 13, 9, 0, Math.PI * 2); ctx.fill();
 }
 
-/* ---------- BINO ---------- */
+/* ---------- BINO (uylar) — tom, eshik, derazada piyodalar (virtual hayot) ---------- */
 const BPAL = [["#dcc9a6","#c1ad8b"],["#b9c5d0","#9fabb9"],["#e0b6a0","#c79d86"],
-              ["#a9b8a2","#8fa08a"],["#d3d9e0","#b7bfc9"],["#cfc5df","#b6abc9"],["#c9b29a","#ae9880"]];
+              ["#a9b8a2","#8fa08a"],["#d3d9e0","#b7bfc9"],["#cfc5df","#b6abc9"],["#c9b29a","#ae9880"],
+              ["#e4d1b0","#ccb792"],["#c0c8c0","#a6aea6"]];
+const ROOF_PAL = ["#5a3a2a","#7a2f2f","#2b3b55","#3f5a3a","#4a3d55","#664a2a","#2e2e38"];
 function drawBuilding(x, y, w, h, seed) {
   const p = BPAL[Math.floor(rnd(seed) * BPAL.length)];
+  const roof = ROOF_PAL[Math.floor(rnd(seed * 1.3) * ROOF_PAL.length)];
+  const isNight = weather.id === "night";
+  const faceLeft = (x < 0);
+
   ctx.fillStyle = "rgba(0,0,0,0.34)";
   ctx.fillRect(x + 22, y + 26, w, h);
+
+  const roofH = 18 + Math.floor(rnd2(seed, 4) * 12);
+  ctx.fillStyle = shade(roof, 0.75);
+  ctx.beginPath();
+  ctx.moveTo(x - 10, y);
+  ctx.lineTo(x + w / 2, y - roofH - 4);
+  ctx.lineTo(x + w + 10, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = roof;
+  ctx.beginPath();
+  ctx.moveTo(x - 4, y);
+  ctx.lineTo(x + w / 2, y - roofH);
+  ctx.lineTo(x + w + 4, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - 4, y); ctx.lineTo(x + w / 2, y - roofH); ctx.lineTo(x + w + 4, y);
+  ctx.stroke();
+
   ctx.fillStyle = p[1];
   ctx.fillRect(x - 6, y - 6, w + 12, h + 12);
-  ctx.fillStyle = p[0];
+  ctx.fillStyle = isNight ? shade(p[0], 0.6) : p[0];
   ctx.fillRect(x, y, w, h);
   ctx.strokeStyle = "rgba(0,0,0,0.42)"; ctx.lineWidth = 3;
   ctx.strokeRect(x, y, w, h);
   ctx.fillStyle = "rgba(0,0,0,0.13)";
   ctx.fillRect(x + 15, y + 15, Math.max(4, w - 30), Math.max(4, h - 30));
+
+  const doorX = faceLeft ? x + w - 34 : x + 14;
+  const doorY = y + h - 58;
+  ctx.fillStyle = isNight ? "#1a1410" : "#4a3624";
+  rr(ctx, doorX, doorY, 22, 52, 4); ctx.fill();
+  ctx.fillStyle = "#d9c27a";
+  ctx.beginPath(); ctx.arc(faceLeft ? doorX + 5 : doorX + 17, doorY + 28, 1.6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = isNight ? "rgba(255,210,120,0.25)" : "rgba(0,0,0,0.10)";
+  ctx.fillRect(doorX + 4, doorY + 8, 14, 18);
+
   const n = 2 + Math.floor(rnd2(seed, 3) * 3);
   for (let i = 0; i < n; i++) {
     const rx = x + 20 + rnd2(seed, i + 7) * Math.max(8, w - 75);
@@ -436,9 +803,123 @@ function drawBuilding(x, y, w, h, seed) {
   }
   ctx.fillStyle = "rgba(255,255,255,0.12)";
   ctx.beginPath(); ctx.arc(x + w - 36, y + 36, 15, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "rgba(20,30,45,0.55)";
-  const inner = x < 0 ? x + w - 15 : x + 5;
-  for (let wy = y + 18; wy < y + h - 26; wy += 42) ctx.fillRect(inner, wy, 10, 26);
+  const inner = faceLeft ? x + w - 15 : x + 5;
+  const nowSec = performance.now() * 0.001;
+  for (let wy = y + 18, rc = 0; wy < y + h - 70; wy += 42, rc++) {
+    for (let wx = x + 22; wx < x + w - 30; wx += 44) {
+      const lit = isNight && (rnd2(seed, rc * 13 + wx * 0.017) < 0.62);
+      ctx.fillStyle = lit ? "rgba(255,225,130,0.95)" : (isNight ? "rgba(20,30,45,0.85)" : "rgba(20,30,45,0.55)");
+      ctx.fillRect(wx, wy, 22, 24);
+      if (lit) {
+        ctx.fillStyle = "rgba(255,225,130,0.18)";
+        ctx.fillRect(wx - 4, wy - 4, 30, 32);
+      }
+      if (!isNight && rnd2(seed, rc * 7 + wx * 0.03) < 0.14) {
+        const px = wx + 6 + ((rnd2(seed, rc * 11 + wx) < 0.5) ? 0 : 9);
+        ctx.fillStyle = pick(PED_TOPS);
+        ctx.fillRect(px, wy + 10, 5, 10);
+        ctx.fillStyle = pick(["#f0c8a0","#e0ac7e","#c68863"]);
+        ctx.beginPath(); ctx.arc(px + 2.5, wy + 8, 2.4, 0, Math.PI * 2); ctx.fill();
+      } else if (isNight && lit && rnd2(seed, rc * 3 + wx * 0.05) < 0.10) {
+        const px = wx + 7;
+        const py = wy + 12 + Math.sin(nowSec * 1.3 + rc + wx) * 1.2;
+        ctx.fillStyle = "rgba(30,30,40,0.90)";
+        ctx.fillRect(px, py, 5, 10);
+        ctx.beginPath(); ctx.arc(px + 2.5, py - 2, 2.2, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.fillStyle = isNight ? "rgba(10,15,22,0.7)" : "rgba(20,30,45,0.55)";
+    ctx.fillRect(inner, wy, 10, 26);
+  }
+}
+
+/* ---------- GULLAR / HOVLI ELEMENTLARI ---------- */
+function drawFlowerBed(x, y, seed) {
+  const nowSec = performance.now() * 0.001;
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
+  ctx.beginPath(); ctx.ellipse(x + 2, y + 5, 22, 10, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#6b4a2a";
+  rr(ctx, x - 18, y - 3, 36, 14, 5); ctx.fill();
+  ctx.fillStyle = "#3d5b2a";
+  rr(ctx, x - 16, y - 2, 32, 12, 4); ctx.fill();
+  for (let i = 0; i < 5; i++) {
+    const fx = x - 12 + i * 6;
+    const fy = y - 1 + Math.sin(nowSec * 1.8 + i + seed) * 0.8;
+    ctx.strokeStyle = "#2a4a22"; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(fx, fy); ctx.lineTo(fx, fy - 6); ctx.stroke();
+    const col = pick(["#e74c3c","#f1c40f","#ecf0f1","#e84393","#9b59b6","#ffffff","#ff8c42"]);
+    ctx.fillStyle = col;
+    for (let k = 0; k < 5; k++) {
+      const ang = k * Math.PI * 0.4;
+      ctx.beginPath(); ctx.arc(fx + Math.cos(ang) * 2, fy - 7 + Math.sin(ang) * 2, 1.8, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.fillStyle = "#f7d74a";
+    ctx.beginPath(); ctx.arc(fx, fy - 7, 1.3, 0, Math.PI * 2); ctx.fill();
+  }
+}
+function drawBench(x, y, side) {
+  const s = side || 1;
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.fillRect(x - 14 * s, y + 3, 46 * s, 8);
+  ctx.fillStyle = "#6a5236";
+  rr(ctx, x - 16 * s, y - 2, 50 * s, 10, 3); ctx.fill();
+  ctx.fillStyle = "#4a3a28";
+  for (let i = 0; i < 6; i++) ctx.fillRect(x - 15 * s + i * 8 * s, y - 1, 6 * s, 8);
+  ctx.fillStyle = "#3d434b";
+  ctx.fillRect(x - 13 * s, y + 8, 4 * s, 10);
+  ctx.fillRect(x + 29 * s, y + 8, 4 * s, 10);
+}
+
+/* ---------- SVETOFOR ---------- */
+const trafficLights = [];
+function initTrafficLights() {
+  trafficLights.length = 0;
+  for (let i = -38; i <= 38; i += 2) {
+    for (const side of [-1, 1]) {
+      trafficLights.push({
+        x: side * (ROAD - 16),
+        y: i * CROSS_STEP,
+        side,
+        phase: (((i % 4) + 4) % 4) * 2.55
+      });
+    }
+  }
+}
+function lightStateFor(ph) {
+  const T = 13;
+  const t = ((ph % T) + T) % T;
+  if (t < 7) return "g";
+  if (t < 8.8) return "y";
+  if (t < 12.3) return "r";
+  return "y";
+}
+function drawTrafficLight(x, y, side, ph) {
+  const state = lightStateFor(ph);
+  const ox = side * 10;
+  ctx.fillStyle = "#2a2e36";
+  rr(ctx, x + ox - 6, y - 58, 12, 52, 3); ctx.fill();
+  ctx.fillStyle = "#3a3f48";
+  ctx.fillRect(x + ox - 2, y - 6, 4, 44);
+  ctx.fillStyle = "#2a2e36";
+  ctx.fillRect(x + ox - 10, y + 36, 20, 8);
+  const colors = { r:"#ff3b3b", y:"#ffd24a", g:"#3de36e" };
+  const off = { r:"#4a1a1a", y:"#4a4018", g:"#194427" };
+  for (let i = 0; i < 3; i++) {
+    const k = ["r","y","g"][2 - i];
+    const on = (state === k);
+    ctx.fillStyle = on ? colors[k] : off[k];
+    ctx.beginPath(); ctx.arc(x + ox, y - 46 + i * 14, 4.2, 0, Math.PI * 2); ctx.fill();
+    if (on) {
+      ctx.fillStyle = colors[k];
+      ctx.globalAlpha = 0.22;
+      ctx.beginPath(); ctx.arc(x + ox, y - 46 + i * 14, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+  if (state === "r" || state === "y") {
+    ctx.fillStyle = state === "r" ? "rgba(255,59,59,0.10)" : "rgba(255,210,74,0.10)";
+    ctx.beginPath(); ctx.arc(x - side * 100, y, 130, 0, Math.PI * 2); ctx.fill();
+  }
 }
 
 /* ---------- DUNYO ---------- */
@@ -447,10 +928,33 @@ function drawWorld() {
   const x0 = cam.x - vw/2 - 140, x1 = cam.x + vw/2 + 140;
   const y0 = cam.y - vh/2 - 140, y1 = cam.y + vh/2 + 140;
 
-  ctx.fillStyle = "#4b7442";
+  const isNight = weather.id === "night";
+  const isRain = weather.rain;
+  const grass = isNight ? "#1e3324" : (isRain ? "#3a5f35" : "#4b7442");
+  const roadC = isNight ? "#1b1d22" : (isRain ? "#2a2d33" : "#33363c");
+
+  ctx.fillStyle = grass;
   ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
 
-  ctx.fillStyle = "#33363c";
+  // PARKOVKA ZONASI (asfalt/plitka) - piyodalar yonida emas, uylar oldida
+  const parkA = isNight ? "#2b2d31" : (isRain ? "#3a3d43" : "#4a4e55");
+  ctx.fillStyle = parkA;
+  ctx.fillRect(PARK_L, y0, PARK_R - PARK_L, y1 - y0);
+  ctx.fillRect(-PARK_R, y0, PARK_R - PARK_L, y1 - y0);
+  ctx.strokeStyle = "rgba(255,255,255,0.18)"; ctx.lineWidth = 2;
+  ctx.setLineDash([22, 18]);
+  for (let yy = Math.floor(y0 / 60) * 60; yy < y1; yy += 120) {
+    ctx.beginPath(); ctx.moveTo(PARK_L + 14, yy); ctx.lineTo(PARK_R - 14, yy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-PARK_L - 14, yy); ctx.lineTo(-PARK_R + 14, yy); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.fillStyle = "rgba(255,255,255,0.24)";
+  ctx.fillRect(PARK_L, y0, 5, y1 - y0);
+  ctx.fillRect(PARK_R - 5, y0, 5, y1 - y0);
+  ctx.fillRect(-PARK_L - 5, y0, 5, y1 - y0);
+  ctx.fillRect(-PARK_R, y0, 5, y1 - y0);
+
+  ctx.fillStyle = roadC;
   ctx.fillRect(-ROAD, y0, ROAD * 2, y1 - y0);
   ctx.fillStyle = "rgba(0,0,0,0.15)";
   for (let yy = Math.floor(y0 / 260) * 260; yy < y1; yy += 260) {
@@ -480,10 +984,10 @@ function drawWorld() {
   ctx.fillRect(5, y0, 4, y1 - y0);
   ctx.fillStyle = "rgba(240,240,235,0.85)";
   for (let yy = Math.floor(y0 / 72) * 72; yy < y1; yy += 72) {
-    ctx.fillRect(-84, yy, 5, 36);
-    ctx.fillRect(-124, yy, 5, 36);
-    ctx.fillRect(79, yy, 5, 36);
-    ctx.fillRect(119, yy, 5, 36);
+    ctx.fillRect(-113, yy, 5, 36);
+    ctx.fillRect(-56, yy, 5, 36);
+    ctx.fillRect(51, yy, 5, 36);
+    ctx.fillRect(108, yy, 5, 36);
   }
 
   const cFirst = Math.ceil(y0 / CROSS_STEP) * CROSS_STEP;
@@ -503,9 +1007,26 @@ function drawWorld() {
       const fx = side * (BLOCK_END + 4);
       const bx = side > 0 ? fx : fx - depth;
       drawBuilding(bx, fy, depth, len, i * 3.7 + side);
+
+      // HOVLI: plyitka yo'lakcha + gullar + skameyka (uy oldi)
+      const py = fy + len * 0.55;
+      const px = side > 0 ? bx - 30 : bx + depth + 30;
+      ctx.fillStyle = isNight ? "#6a6558" : "#b8ad94";
+      for (let ry = py; ry < py + 70; ry += 16) {
+        for (let rx = px - 24 * side; side > 0 ? rx > px - 90 : rx < px + 90; rx -= 16 * side) {
+          ctx.fillRect(rx, ry, 13, 13);
+        }
+      }
+      if (rnd2(i, side + 11) < 0.75) {
+        drawFlowerBed(px - side * 54, py + 22, i * 5 + side);
+      }
+      if (rnd2(i, side + 21) < 0.38) {
+        drawBench(px - side * 30, py + 60, side);
+      }
     }
   }
 
+  // Tumanli hudud: daraxtlar
   const tStep = 185;
   const t0 = Math.floor(y0 / tStep) - 1, t1 = Math.ceil(y1 / tStep) + 1;
   for (let i = t0; i <= t1; i++) {
@@ -515,14 +1036,32 @@ function drawWorld() {
     }
   }
 
+  // Ko'cha lampalari
   for (let i = t0; i <= t1; i++) {
     const ly = i * tStep + 140;
     for (const side of [-1, 1]) {
       const lx = side * (SW_L + 13);
-      ctx.fillStyle = "rgba(255,236,160,0.20)";
-      ctx.beginPath(); ctx.arc(lx, ly, 13, 0, Math.PI * 2); ctx.fill();
+      if (isNight || weather.id === "storm" || weather.id === "fog") {
+        ctx.fillStyle = "rgba(255,220,130,0.55)";
+        ctx.beginPath(); ctx.arc(lx, ly, 90, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(255,236,160,0.85)";
+        ctx.beginPath(); ctx.arc(lx, ly, 22, 0, Math.PI * 2); ctx.fill();
+      } else {
+        ctx.fillStyle = "rgba(255,236,160,0.20)";
+        ctx.beginPath(); ctx.arc(lx, ly, 13, 0, Math.PI * 2); ctx.fill();
+      }
       ctx.fillStyle = "#3d434b";
       ctx.beginPath(); ctx.arc(lx, ly, 6, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // Svetoforlar
+  const tphStart = Math.floor(y0 / CROSS_STEP) - 1;
+  const tphEnd = Math.ceil(y1 / CROSS_STEP) + 1;
+  const nowSec = performance.now() * 0.001;
+  for (const tl of trafficLights) {
+    if (tl.y > (tphStart) * CROSS_STEP && tl.y < (tphEnd) * CROSS_STEP) {
+      drawTrafficLight(tl.x, tl.y, tl.side, tl.phase + nowSec);
     }
   }
 }
@@ -586,6 +1125,7 @@ function toggleShop(open) {
 document.getElementById("btnShop").onclick = () => toggleShop(true);
 document.getElementById("btnClose").onclick = () => toggleShop(false);
 document.getElementById("btnExit").onclick = () => { if (!shopOpen) toggleCar(); };
+document.getElementById("btnCamera").onclick = () => { if (window.toggleDrivingCamera) window.toggleDrivingCamera(); };
 
 function renderShop() {
   document.getElementById("shopMoney").textContent = fmt(save.money);
@@ -650,15 +1190,23 @@ const ownedEl = document.getElementById("ownedInfo");
 const kmhEl = document.getElementById("kmh");
 const modeEl = document.getElementById("modeTxt");
 const exitBtn = document.getElementById("btnExit");
+const timeTxtEl = document.getElementById("timeTxt");
 function updateHUD() {
   moneyEl.textContent = fmt(save.money);
   const car = CARS[save.current] || CARS.mers;
   carNameEl.textContent = car.name;
-  distEl.textContent = (save.distance / 8000).toFixed(2);
+  distEl.textContent = (save.distance / PX_PER_KM).toFixed(2);
   ownedEl.textContent = "Garajda: " + save.owned.length + " ta moshina";
   kmhEl.textContent = P.mode === "car" ? Math.round(Math.abs(P.speed) / 2.6) : "0";
   modeEl.textContent = P.mode === "car" ? "🟡 MASHINADA" : "🚶 PIYODA";
+  const cameraEl = document.getElementById("cameraTxt");
+  if (cameraEl) cameraEl.textContent = window.drivingCameraMode === "inside" ? "🎥 SALON ICHIDA" : "🎥 ORQADAN";
   exitBtn.textContent = P.mode === "car" ? "🚶 Tushish (F)" : "🚗 Minish (F)";
+  if (timeTxtEl) {
+    const h = Math.floor(gameTime.hours);
+    const m = Math.floor((gameTime.hours - h) * 60);
+    timeTxtEl.textContent = (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m;
+  }
 }
 
 /* ---------- YANGILASH ---------- */
@@ -741,6 +1289,24 @@ function updateCar(dt) {
     }
   }
 
+  // SVETOFORGA TO'XTASH (o'yinchi uchun)
+  if (P.mode === "car" && sp > 0) {
+    const nowSec = performance.now() * 0.001;
+    for (const tl of trafficLights) {
+      if (Math.sign(P.x) !== tl.side) continue;
+      const state = lightStateFor(tl.phase + nowSec);
+      if (state === "r" || state === "y") {
+        const dirSign = P.speed >= 0 ? 1 : -1;
+        const stopLine = tl.y - dirSign * 60;
+        const distToStop = (stopLine - P.y) * dirSign;
+        if (distToStop > 0 && distToStop < 240) {
+          P.speed = Math.max(0, P.speed - (def.max * 6) * dt);
+          if (distToStop < 30) P.speed = 0;
+        }
+      }
+    }
+  }
+
   save.distance += sp * dt;
 }
 
@@ -766,37 +1332,222 @@ function updateFoot(dt) {
 
 function updateTraffic(dt) {
   const vhHalf = H / zoom / 2 + 500;
+  const nowSec = performance.now() * 0.001;
 
   for (const c of traffic) {
+    if (c.turnRoute) {
+      if (c.turnRoute === "curve") {
+        c.turnProgress = Math.min(Math.PI / 2, c.turnProgress + c.speed * dt / 70);
+        const a = c.turnProgress;
+        const x0 = c.turnStartX;
+        c.x = x0 + c.routeSide * 70 * (1 - Math.cos(a));
+        c.y = c.turnIntersectionY - c.dir * 70 + c.dir * 70 * Math.sin(a);
+        c.angle = Math.atan2(c.routeSide * Math.sin(a), -c.dir * Math.cos(a));
+        c.speed = Math.min(c.speed, 82);
+        if (c.turnProgress >= Math.PI / 2) c.turnRoute = "street";
+      } else {
+        c.x += c.routeSide * c.speed * dt;
+        c.y = c.turnIntersectionY;
+        c.angle = c.routeSide > 0 ? Math.PI / 2 : -Math.PI / 2;
+        if (Math.abs(c.x) > ROAD + 400) placeTraffic(c, c.dir);
+      }
+      continue;
+    }
     if (c.stopT > 0) {
       c.stopT -= dt;
-      c.speed = Math.max(0, c.speed - 300 * dt);
-      if (c.stopT <= 0) c.speed = c.kmh * 2.6;
+      c.speed = Math.max(0, c.speed - 220 * dt);
     }
-    if (!c.exited && Math.abs(c.y - cam.y) < vhHalf * 0.7 && Math.random() < dt * 0.05) {
+    if (!c.exited && Math.abs(c.y - cam.y) < vhHalf * 0.7 && Math.random() < dt * 0.04) {
       c.exited = true; c.stopT = 4.5;
       spawnPedFromCar(c);
+    }
+
+    // PIYODALARGA URILISHDAN OLDINI OLISH (piyodalar yo'lida piyoda bo'lsa to'xtaydi)
+    if (c.stopT <= 0) {
+      for (const p of peds) {
+      if (p.mode === "enter" || p.mode === "exit") continue;
+      if (Math.sign(p.x) !== Math.sign(c.x)) continue;
+      const dx = Math.abs(p.x - c.x);
+      const dy = (p.y - c.y) * c.dir;
+      if (dx < 60 && dy > -10 && dy < 160) {
+        c.speed = Math.max(0, c.speed - (c.kmh * 7) * dt);
+        c.brake = true;
+        if (dy < 70) c.speed = 0;
+      }
+      }
+    }
+
+    if (c.wantsTurn && Math.abs(Math.abs(c.x) - (ROAD - 28)) < 34) {
+      for (const tl of trafficLights) {
+        if (tl.side !== Math.sign(c.x) || lightStateFor(tl.phase + nowSec) !== "g") continue;
+        const stopLine = tl.y - c.dir * 70;
+        const distToStop = (stopLine - c.y) * c.dir;
+        if (distToStop > 0 && distToStop < 90) {
+          c.turnRoute = "curve";
+          c.turnProgress = 0;
+          c.turnStartX = c.x;
+          c.turnIntersectionY = tl.y;
+          c.routeSide = c.dir === -1 ? 1 : -1;
+          c.wantsTurn = false;
+          c.speed = Math.min(c.speed, 82);
+          break;
+        }
+      }
+    }
+
+    // BURILISH / XAT ALMASHISH / REVERSE (virtual hayot + QOIDA)
+    if (c.stopT <= 0) {
+      c.turnCd -= dt;
+      if (c.turnT > 0) {
+        c.turnT -= dt;
+        const tn = c.turnSide || 1;
+        const ang = Math.sin((1 - c.turnT / c.turnT_orig) * Math.PI / 2) * (c.turnAng || 0);
+        c.angle = (c.dir === -1 ? 0 : Math.PI) + ang * tn;
+        c.x += tn * c.turnLaneSpeed * dt;
+      } else if (c.turnCd <= 0) {
+        c.turnCd = 8 + Math.random() * 14;
+        const r = Math.random();
+        if (r < 0.30) {
+          // XAT ALMASHISH (kamroq — qoida)
+          const arr = (c.dir === -1 ? LANE_N : LANE_S);
+          let idx = -1;
+          for (let k = 0; k < arr.length; k++) if (Math.abs(arr[k] - c.x) < 5) { idx = k; break; }
+          if (idx === -1) idx = Math.floor(Math.random() * arr.length);
+          const delta = (Math.random() < 0.5 ? -1 : 1);
+          const target = Math.max(0, Math.min(arr.length - 1, idx + delta));
+          if (target !== idx) {
+            const targetX = arr[target];
+            let bClear = true;
+            for (const o of traffic) {
+              if (o === c || o.dir !== c.dir) continue;
+              const ody = (o.y - c.y) * c.dir;
+              if (ody > -90 && ody < 220 && Math.abs(o.x - targetX) < 48) { bClear = false; break; }
+            }
+            if (bClear) {
+              c.turnSide = (targetX - arr[idx]) > 0 ? 1 : -1;
+              c.turnT_orig = c.turnT = 1.6 + Math.random() * 0.8;
+              c.turnAng = 0.16;
+              c.turnTarget = targetX;
+              c.turnLaneSpeed = (targetX - c.x) / c.turnT;
+            }
+          }
+        }
+      }
+
+      if (c.turnT <= 0 && c.turnTarget !== undefined && Math.abs(c.x - c.turnTarget) < 80) {
+        c.x += (c.turnTarget - c.x) * Math.min(1, dt * 2.5);
+        if (Math.abs(c.x - c.turnTarget) < 3) { c.x = c.turnTarget; c.turnTarget = undefined; c.angle = (c.dir === -1 ? 0 : Math.PI); }
+      }
+    }
+    // PIYODALAR YO'LIGA CHIQIB KETMASLIK (QOIDA)
+    const side = Math.sign(c.x) || 1;
+    if (Math.abs(c.x) > ROAD - 24) {
+      c.x = side * (ROAD - 24);
+      c.speed *= 0.6;
+    }
+    c.brake = c.stopT > 0.05;
+
+    // SVETOFORGA TO'XTASH
+    c.signalLimit = c.kmh * 2.6;
+    if (c.stopT <= 0) {
+      for (const tl of trafficLights) {
+        const tlSide = tl.side;
+        if (tlSide !== Math.sign(c.x)) continue;
+        const state = lightStateFor(tl.phase + nowSec);
+        if (state === "r" || state === "y") {
+          const stopLine = tl.y - c.dir * 70;
+          const distToStop = (stopLine - c.y) * c.dir;
+          if (distToStop > 0 && distToStop < 900) {
+            const stoppingSpeed = Math.sqrt(2 * 260 * Math.max(0, distToStop - 48));
+            c.signalLimit = Math.min(c.signalLimit, stoppingSpeed);
+          }
+        }
+      }
+    }
+
+    // PARKOVKAGA KIRISH: ayrim traffik moshinalari parkovka qiladi
+    if (parked.length > 0 && Math.random() < dt * 0.014 && Math.abs(c.y - cam.y) < H / zoom / 2) {
+      const side = Math.sign(c.x);
+      for (let k = parked.length - 1; k >= 0; k--) {
+        const pk = parked[k];
+        if (Math.sign(pk.x) === side && Math.abs(pk.y - c.y) < 200) {
+          const pkCopy = Object.assign({}, pk);
+          parked.splice(k, 1);
+          c.x = pkCopy.x; c.y = pkCopy.y; c.angle = pkCopy.angle;
+          c.speed = 0; c.stopT = 3 + Math.random() * 6; c.turnTarget = undefined;
+          if (parked.length < 50 && Math.random() < 0.9) {
+            const t = pickWeighted();
+            parked.push({
+              x: side * (PARK_L + 14 + Math.random() * (PARK_R - PARK_L - 140)),
+              y: cam.y + c.dir * (H / zoom / 2 + 500 + Math.random() * 700),
+              angle: side > 0 ? Math.PI : 0,
+              color: pick(t.colors),
+              type: t.type,
+              plate: makePlate(),
+              parked: true
+            });
+          }
+          break;
+        }
+      }
     }
   }
 
   for (const c of traffic) {
-    let bestGap = 1e9, leaderSp = null;
-    for (const o of traffic) {
-      if (o === c || o.dir !== c.dir || Math.abs(o.x - c.x) > 14) continue;
-      const gap = (o.y - c.y) * c.dir;
-      if (gap > 0 && gap < bestGap) { bestGap = gap; leaderSp = o.speed; }
+    if (c.turnRoute) continue;
+    let bestGap = Infinity, leaderSpeed = Infinity;
+    for (const other of traffic) {
+      if (other === c || other.dir !== c.dir || Math.abs(other.x - c.x) > 34) continue;
+      const gap = (other.y - c.y) * c.dir;
+      if (gap > 0 && gap < bestGap) { bestGap = gap; leaderSpeed = other.speed; }
     }
-    if (leaderSp !== null && bestGap < 150 && leaderSp < c.speed) {
-      c.speed = Math.max(0, leaderSp + (bestGap < 100 ? -30 : 0));
-    } else if (c.stopT <= 0) {
-      c.speed += (c.kmh * 2.6 - c.speed) * Math.min(1, dt * 1.4);
+    let targetSpeed = Math.min(c.kmh * 2.6, c.signalLimit);
+    if (bestGap < 190) {
+      const safeFollowingSpeed = Math.max(0, leaderSpeed + (bestGap - 82) * 1.7);
+      targetSpeed = Math.min(targetSpeed, safeFollowingSpeed);
     }
+    if (c.stopT > 0) targetSpeed = 0;
+    const rate = targetSpeed < c.speed ? 280 : 42;
+    c.speed += clamp(targetSpeed - c.speed, -rate * dt, rate * dt);
+    c.speed = Math.max(0, c.speed);
+    c.brake = c.speed < targetSpeed - 2 || targetSpeed < c.kmh * 2.6 - 4;
     c.y += c.dir * c.speed * dt;
   }
 
   for (const c of traffic) {
-    if (c.y < cam.y - vhHalf) placeTraffic(c, 1);
-    else if (c.y > cam.y + vhHalf) placeTraffic(c, -1);
+    if (c.y < cam.y - vhHalf) placeTraffic(c, -1);
+    else if (c.y > cam.y + vhHalf) placeTraffic(c, 1);
+  }
+
+  // PARKOVKADAN CHIQISH: ayrim parkovka moshinalari traffikka chiqadi
+  for (let k = parked.length - 1; k >= 0; k--) {
+    const pk = parked[k];
+    if (Math.abs(pk.y - cam.y) < H / zoom / 2 + 100 && Math.random() < dt * 0.02) {
+      // parkovka moshinasini traffikka o'gir
+      const side = Math.sign(pk.x);
+      for (const c of traffic) {
+        if (Math.abs(c.y - pk.y) > 1000) {
+          c.dir = Math.random() < 0.5 ? -1 : 1;
+          c.x = laneFor(c.dir);
+          c.y = pk.y - c.dir * 140;
+          fillTraffic(c);
+          break;
+        }
+      }
+      parked.splice(k, 1);
+      // joyiga yangi parkovka moshinasi qo'sh (chegaralar tashqarisida)
+      const t = pick(TRAFFIC_TYPES);
+      const ns = Math.random() < 0.5 ? -1 : 1;
+      parked.push({
+        x: ns * (PARK_L + 14 + Math.random() * (PARK_R - PARK_L - 140)),
+        y: cam.y + (Math.random() < 0.5 ? -1 : 1) * (H / zoom / 2 + 800 + Math.random() * 1200),
+        angle: ns > 0 ? Math.PI : 0,
+        color: pick(t.colors),
+        type: t.type,
+        plate: makePlate(),
+        parked: true
+      });
+    }
   }
 
   if (P.mode === "car" && hitCd <= 0) {
@@ -813,6 +1564,20 @@ function updateTraffic(dt) {
         break;
       }
     }
+    // Parkovka moshinalariga urilish
+    for (const pk of parked) {
+      const dx = Math.abs(pk.x - P.x), dy = Math.abs(pk.y - P.y);
+      const d = (DIMS[pk.type] || DIMS.sedan);
+      if (dx < (d.w / 2 + 24) && dy < (d.l / 2 + 30)) {
+        const push = pk.x >= P.x ? 1 : -1;
+        P.x += push * 16;
+        P.speed *= -0.3; shake = Math.max(shake, 14);
+        burst(P.x, P.y, "#bfa36f", 10);
+        hit(120, "🚗 Parkovkada moshinaga urildi! $120");
+        floater(P.x, P.y, "-$120", "#ff5252");
+        break;
+      }
+    }
   }
 }
 
@@ -820,25 +1585,95 @@ function updatePeds(dt) {
   const vh = H / zoom;
   for (let i = 0; i < peds.length; i++) {
     const p = peds[i];
-    p.phase += dt * (p.mode === "exit" ? 13 : 8);
+    p.phase += dt * (p.mode === "exit" || p.mode === "enter" ? 14 : (p.mode === "walk" ? 8 : 2));
 
     if (p.mode === "exit") {
       p.x += (p.xTarget - p.x) * Math.min(1, dt * 3);
-      if (Math.abs(p.x - p.xTarget) < 7) { p.mode = "walk"; p.dir = Math.random() < .5 ? -1 : 1; }
-    } else {
-      p.y += p.dir * p.speed * dt;
-      p.crossCd -= dt;
-      if (p.crossCd <= 0) {
-        p.crossCd = 6 + Math.random() * 10;
-        if (Math.random() < 0.4) p.xTarget = -Math.sign(p.x || 1) * (172 + Math.random() * 26);
+      if (Math.abs(p.x - p.xTarget) < 7) { p.mode = "walk"; p.dir = Math.random() < .5 ? -1 : 1; p.modeT = 2 + Math.random() * 6; }
+    } else if (p.mode === "cross") {
+      const step = Math.sign(p.crossTarget - p.x) * Math.min(Math.abs(p.crossTarget - p.x), 125 * dt);
+      p.x += step;
+      p.y = p.crossY;
+      if (Math.abs(p.crossTarget - p.x) < 2) {
+        p.x = p.crossTarget;
+        p.side = Math.sign(p.crossTarget);
+        p.xTarget = p.crossTarget;
+        p.crossTarget = null;
+        p.mode = "walk";
+        p.crossCd = 12 + Math.random() * 12;
       }
-      p.x += (p.xTarget - p.x) * Math.min(1, dt * 2.4);
+    } else if (p.mode === "enter") {
+      const side = Math.sign(p.x || 1);
+      const doorX = side * (BLOCK_END + 30);
+      p.x += (doorX - p.x) * Math.min(1, dt * 4);
+      if (Math.abs(p.x - doorX) < 8) {
+        const np = newPed({});
+        np.y = cam.y + (p.dir === -1 ? vh / 2 + 320 + Math.random() * 260
+                                     : -vh / 2 - 320 - Math.random() * 260);
+        np.side = Math.random() < 0.5 ? -1 : 1;
+        np.xTarget = np.side * (175 + Math.random() * 90);
+        np.x = np.xTarget;
+        peds[i] = np;
+        continue;
+      }
+    } else if (p.mode === "walk") {
+      p.y += p.dir * p.speed * dt;
+      p.modeT -= dt;
+      p.crossCd -= dt;
+      p.enterCd -= dt;
+      if (p.enterCd <= 0 && Math.abs(p.y - cam.y) < vh / 2 + 150 && Math.random() < 0.12) {
+        p.mode = "enter";
+        p.phase = 0;
+        continue;
+      }
+      if (p.crossCd <= 0) {
+        p.crossCd = 8 + Math.random() * 12;
+        const crossingY = Math.round(p.y / CROSS_STEP) * CROSS_STEP;
+        const signal = trafficLights.find((tl) => Math.abs(tl.y - crossingY) < 1);
+        const carsStopped = signal && lightStateFor(signal.phase + performance.now() * 0.001) === "r";
+        if (Math.abs(p.y - crossingY) < 105 && carsStopped && Math.random() < 0.45) {
+          p.mode = "cross";
+          p.crossY = crossingY;
+          p.crossTarget = -Math.sign(p.x || p.side) * (175 + Math.random() * 90);
+          p.y = crossingY;
+          continue;
+        }
+        p.xTarget = Math.sign(p.x || p.side) * (175 + Math.random() * 90);
+      }
+      p.x += (p.xTarget - p.x) * Math.min(1, dt * 2.2);
+      if (p.modeT <= 0) {
+        const m = pick(PED_MODES);
+        p.mode = m;
+        p.modeT = (m === "walk" ? 3 + Math.random() * 8 : 2 + Math.random() * 6);
+        if (m === "talk") {
+          for (let j = 0; j < peds.length; j++) {
+            const q = peds[j];
+            if (q !== p && q.mode === "stand" && Math.abs(q.y - p.y) < 70 && q.side === p.side) {
+              p.friend = j; q.friend = i; q.mode = "talk"; q.modeT = p.modeT;
+              p.y = (p.y + q.y) / 2 + 14; q.y = p.y - 28;
+              break;
+            }
+          }
+        }
+      }
+    } else {
+      p.modeT -= dt;
+      if (p.mode === "talk" && p.friend !== null && peds[p.friend]) {
+        const q = peds[p.friend];
+        if (!q || q.mode !== "talk" || q.friend !== i) { p.friend = null; p.modeT = 0; }
+      }
+      if (p.modeT <= 0) {
+        if (p.friend !== null && peds[p.friend]) { peds[p.friend].friend = null; peds[p.friend].modeT = 0; p.friend = null; }
+        p.mode = "walk";
+        p.dir = Math.random() < .5 ? -1 : 1;
+        p.modeT = 3 + Math.random() * 8;
+      }
     }
 
-    if (p.y < cam.y - vh / 2 - 550 || p.y > cam.y + vh / 2 + 550) {
+    if (p.y < cam.y - vh / 2 - 600 || p.y > cam.y + vh / 2 + 600) {
       const np = newPed({});
-      np.y = cam.y + (p.dir === -1 ? vh / 2 + 320 + Math.random() * 260
-                                   : -vh / 2 - 320 - Math.random() * 260);
+      np.y = cam.y + (p.dir === -1 ? vh / 2 + 340 + Math.random() * 300
+                                   : -vh / 2 - 340 - Math.random() * 300);
       peds[i] = np;
     }
   }
@@ -872,8 +1707,84 @@ function updateCamera(dt) {
   cam.y += (ty - cam.y) * k;
 }
 
+/* ---------- VAQT / OB-HAVO YANGILASH ---------- */
+function updateTimeWeather(dt) {
+  const distanceKm = save.distance / PX_PER_KM;
+  gameTime.hours = (8 + distanceKm / 6) % 24;
+  const nextBand = Math.floor(distanceKm / 3);
+  if (nextBand !== weatherBand) {
+    weatherBand = nextBand;
+    weather = WEATHERS[weatherBand % WEATHERS.length];
+    const wh = document.getElementById("weather");
+    if (wh) wh.childNodes[0].nodeValue = weather.name + " • ";
+    if (weather.rain) {
+      rainDrops.length = 0;
+      for (let i = 0; i < 280; i++) rainDrops.push({ x:0, y:0, vx:0, vy:0, z:0 });
+    } else rainDrops.length = 0;
+    toast("Ob-havo: " + weather.name + " • " + (weatherBand * 3) + " km", weather.rain ? "bad" : "good");
+  }
+
+  if (weather.rain) {
+    const vw = W / zoom, vh = H / zoom;
+    for (let i = 0; i < rainDrops.length; i++) {
+      const d = rainDrops[i];
+      if (d.vy === 0) {
+        d.x = cam.x + (Math.random() - 0.5) * vw * 1.3;
+        d.y = cam.y + (Math.random() - 0.5) * vh * 1.3;
+        d.z = 0.4 + Math.random() * 0.6;
+        d.vx = (weather.id === "storm" ? -140 : -40) * d.z;
+        d.vy = (weather.id === "storm" ? 900 : 520) * d.z;
+      }
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      if (d.y > cam.y + vh / 2 + 80 || d.x < cam.x - vw / 2 - 80) {
+        d.x = cam.x + (Math.random() - 0.5) * vw * 1.3;
+        d.y = cam.y - vh / 2 - 40 - Math.random() * vh * 0.4;
+      }
+    }
+  }
+}
+
+window.publishDrivingFrame = function () {
+  window.drivingFrame = { player: P, traffic, parked, pedestrians: peds, trafficLights, save, car: CARS[save.current] || CARS.mers, weather, shopOpen };
+};
+window.enableThreeRenderer = function () { useThreeRenderer = true; };
+
 /* ---------- RENDER ---------- */
+function drawRainOverlay() {
+  if (!weather.rain) return;
+  ctx.strokeStyle = weather.id === "storm" ? "rgba(190,210,230,0.70)" : "rgba(210,225,240,0.55)";
+  ctx.lineWidth = 1.2;
+  for (const d of rainDrops) {
+    const len = 14 * d.z;
+    ctx.beginPath();
+    ctx.moveTo(d.x, d.y);
+    ctx.lineTo(d.x + (d.vx / 520) * len * 2, d.y + (d.vy / 520) * len * 2);
+    ctx.stroke();
+  }
+}
+
+function drawHeadlight(cx, cy, ang, len, spread) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(ang);
+  const g = ctx.createRadialGradient(0, 0, 0, 0, -len * 0.25, len);
+  g.addColorStop(0, "rgba(255,240,180,0.60)");
+  g.addColorStop(0.35, "rgba(255,240,180,0.18)");
+  g.addColorStop(1, "rgba(255,240,180,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(-spread, 0);
+  ctx.lineTo(-spread * 3.2, -len);
+  ctx.lineTo(spread * 3.2, -len);
+  ctx.lineTo(spread, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 function render() {
+  if (useThreeRenderer) return;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, W, H);
   ctx.save();
@@ -885,13 +1796,24 @@ function render() {
 
   drawWorld();
 
+  // to'xtab turgan moshinalar
+  for (const c of parked) drawCar(ctx, c);
+
   // piyodalar
-  for (const p of peds) drawPerson(ctx, p.x, p.y, p.dir === -1 ? 0 : Math.PI, p.phase, p, 1);
+  for (const p of peds) drawPerson(ctx, p.x, p.y, p.dir === -1 ? 0 : Math.PI, p.phase, p, 1, p.mode);
 
   // traffik moshinalari
+  const needLights = (weather.id === "night" || weather.id === "storm" || weather.id === "fog");
   for (const c of traffic) {
-    drawCar(ctx, { x: c.x, y: c.y, angle: c.dir === -1 ? 0 : Math.PI, color: c.color,
-      type: c.type, plate: c.plate, brake: c.stopT > 0 });
+    const obj = { x: c.x, y: c.y, angle: c.dir === -1 ? 0 : Math.PI, color: c.color,
+      type: c.type, plate: c.plate, brake: c.stopT > 0 };
+    drawCar(ctx, obj);
+    if (needLights) {
+      const dim = (DIMS[c.type] || DIMS.sedan);
+      const lang = (c.dir === -1 ? 0 : Math.PI);
+      drawHeadlight(c.x - (dim.w * 0.28), c.y - Math.cos(lang) * dim.l * 0.42, lang + 0.02, 260, 12);
+      drawHeadlight(c.x + (dim.w * 0.28), c.y - Math.cos(lang) * dim.l * 0.42, lang - 0.02, 260, 12);
+    }
     ctx.save();
     ctx.fillStyle = "rgba(255,255,255,0.75)";
     ctx.font = "700 9px sans-serif"; ctx.textAlign = "center";
@@ -902,20 +1824,29 @@ function render() {
   // o'yinchi
   if (P.mode === "car") {
     const def = CARS[save.current] || CARS.mers;
-    drawCar(ctx, { x: P.x, y: P.y, angle: P.angle, color: def.color, type: def.type,
-      plate: "01 A 777 AA", brake: keys["s"] || keys["arrowdown"] || keys[" "] });
+    const obj = { x: P.x, y: P.y, angle: P.angle, color: def.color, type: def.type,
+      plate: "01 A 777 AA", brake: keys["s"] || keys["arrowdown"] || keys[" "] };
+    drawCar(ctx, obj);
+    if (needLights) {
+      const dim = (DIMS[def.type] || DIMS.sedan);
+      drawHeadlight(P.x - Math.sin(P.angle) * dim.w * 0.28 + Math.cos(P.angle) * 6,
+                    P.y + Math.cos(P.angle) * dim.w * 0.28 + Math.sin(P.angle) * 6,
+                    P.angle + 0.02, 360, 15);
+      drawHeadlight(P.x - Math.sin(P.angle) * dim.w * 0.28 - Math.cos(P.angle) * 6,
+                    P.y + Math.cos(P.angle) * dim.w * 0.28 - Math.sin(P.angle) * 6,
+                    P.angle - 0.02, 360, 15);
+    }
     ctx.save();
     ctx.fillStyle = "#ffd83d"; ctx.font = "800 11px sans-serif"; ctx.textAlign = "center";
     ctx.fillText("⭐ " + def.name, P.x, P.y - (DIMS[def.type] || DIMS.sedan).l / 2 - 12);
     ctx.restore();
   } else {
     drawPerson(ctx, P.fx, P.fy, P.fa, P.phase,
-      { shirt: "#0984e3", pants: "#22303f", skin: "#f0c8a0", hair: "#1c1c1c" }, 1.35);
+      { shirt: "#0984e3", pants: "#22303f", skin: "#f0c8a0", hair: "#1c1c1c" }, 1.35, "walk");
     ctx.save();
     ctx.fillStyle = "#6fe3ff"; ctx.font = "800 11px sans-serif"; ctx.textAlign = "center";
     ctx.fillText("🚶 Siz", P.fx, P.fy - 30);
     ctx.restore();
-    // yaqin moshinaga chiqish belgisi
     const carDist = Math.hypot(P.fx - P.x, P.fy - P.y);
     if (carDist < 90) {
       ctx.save();
@@ -940,9 +1871,33 @@ function render() {
   }
   ctx.globalAlpha = 1;
 
+  // yomg'ir
+  drawRainOverlay();
+
   ctx.restore();
 
-  // pastki qatlam: mashina atrofidagi yorug'lik effekti yo'q, ammo tungi emas — kunduz
+  // ob-havo tint / tuman
+  if (weather.tint || weather.fog > 0) {
+    ctx.save();
+    if (weather.tint) {
+      ctx.fillStyle = weather.id === "night" ? "rgba(10,22,58,0.52)"
+                     : weather.id === "storm" ? "rgba(55,70,95,0.32)"
+                     : weather.id === "rain"  ? "rgba(90,118,144,0.22)"
+                     : weather.id === "fog"   ? "rgba(160,175,190,0.22)"
+                     : "rgba(140,162,180,0.14)";
+      ctx.fillRect(0, 0, W, H);
+    }
+    if (weather.fog > 0) {
+      const vw = W / zoom, vh = H / zoom;
+      const cx = W / 2, cy = H / 2;
+      const g = ctx.createRadialGradient(cx, cy, Math.min(W, H) * 0.18, cx, cy, Math.max(W, H) * 0.62);
+      g.addColorStop(0, "rgba(200,210,220,0)");
+      g.addColorStop(1, "rgba(200,210,220," + Math.min(0.92, weather.fog * 1.3) + ")");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.restore();
+  }
 }
 
 /* ---------- ASOSIY TSIKL ---------- */
@@ -959,6 +1914,7 @@ function loop(now) {
     updatePeds(dt);
     updateFX(dt);
     updateCamera(dt);
+    updateTimeWeather(dt);
 
     if (earnBuf >= 1) {
       const n = Math.floor(earnBuf);
@@ -972,6 +1928,8 @@ function loop(now) {
     if (saveT > 2) { saveT = 0; persist(); }
   }
 
+  if (window.publishDrivingFrame) window.publishDrivingFrame();
+
   render();
 
   hudT += dt;
@@ -983,9 +1941,12 @@ function loop(now) {
 /* ---------- ISHGHA TUSHIRISH ---------- */
 initTraffic();
 initPeds();
+initParked();
+initTrafficLights();
 updateHUD();
 persist();
 requestAnimationFrame(loop);
 </script>
+<script type="module" src="./js/game3d.js"></script>
 </body>
 </html>
